@@ -381,6 +381,7 @@ const digest = async (bytes: Uint8Array): Promise<string> => {
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const dragDepthRef = useRef(0);
   const [language, setLanguage] = useState<Language>("zh");
   const [file, setFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -506,9 +507,29 @@ export default function Home() {
     event.target.value = "";
   };
 
+  const onDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (busy || !event.dataTransfer.types.includes("Files")) return;
+    dragDepthRef.current += 1;
+    setDragging(true);
+  };
+
+  const onDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!busy) event.dataTransfer.dropEffect = "copy";
+  };
+
+  const onDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragging(false);
+  };
+
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    dragDepthRef.current = 0;
     setDragging(false);
+    if (busy) return;
     const selected = event.dataTransfer.files?.[0];
     if (selected) void readFile(selected);
   };
@@ -759,12 +780,9 @@ export default function Home() {
         {!hasFile ? (
           <div
             className={`dropzone ${dragging ? "is-dragging" : ""}`}
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragging(true);
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={() => setDragging(false)}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
             onDrop={onDrop}
           >
             <input
@@ -796,7 +814,14 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="editor-shell">
+          <div
+            className={`editor-shell ${dragging ? "is-dragging" : ""}`}
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            aria-busy={busy}
+          >
             <div className="editor-topbar">
               <div className="file-title">
                 <FileImage size={19} />
@@ -805,7 +830,11 @@ export default function Home() {
                   <span>{fileInfo?.width} × {fileInfo?.height} · {formatBytes(fileInfo?.size ?? 0)}</span>
                 </div>
               </div>
-              <button className="text-button" onClick={() => inputRef.current?.click()}>
+              <button
+                className="text-button"
+                onClick={() => inputRef.current?.click()}
+                disabled={busy}
+              >
                 <Upload size={16} />{t.changePhoto}
               </button>
               <input ref={inputRef} className="sr-only" type="file" accept=".jpg,.jpeg,image/jpeg" onChange={onInput} />
