@@ -473,7 +473,7 @@ export default function Home() {
 
       <section className="hero" id="top">
         <div className="eyebrow"><span /> PRIVATE · LOCAL · LOSSLESS</div>
-        <h1>为照片，重新写下<br /><i>时间与地点。</i></h1>
+        <h1>重写照片的时间、地点和描述</h1>
         <p>
           读取并编辑 JPEG 的 EXIF 信息，在地图上点选位置。
           <br />不上传原片，不改变画质，只导出新的副本。
@@ -517,7 +517,7 @@ export default function Home() {
             <p className="drop-kicker">从这里开始</p>
             <h2>把一张照片拖到这里</h2>
             <p>或从设备中选择一张 JPEG 图片</p>
-            <button className="primary-button" onClick={() => inputRef.current?.click()} disabled={busy}>
+            <button className="primary-button select-button" onClick={() => inputRef.current?.click()} disabled={busy}>
               {busy ? <RefreshCw className="spin" size={18} /> : <ImagePlus size={18} />}
               {busy ? "正在读取…" : "选择照片"}
             </button>
@@ -784,7 +784,7 @@ export default function Home() {
       <section className="trust-section" id="privacy">
         <div className="trust-intro">
           <span className="eyebrow"><span /> 你的照片，属于你</span>
-          <h2>我们看不见<br />你选择的照片。</h2>
+          <h2>我们不会看你的照片</h2>
           <p>读取、修改和验证全部在当前浏览器标签页内完成。只有你主动打开地图时，地图图块才会联网加载。</p>
         </div>
         <div className="trust-grid">
@@ -800,8 +800,12 @@ export default function Home() {
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span>影刻<em>·EXIF</em></span>
         </div>
-        <p>为照片重写时间与地点。</p>
-        <span>首版支持 JPEG · WGS-84 · 单张处理</span>
+        <p>照片只在浏览器本地处理，默认导出新的副本。</p>
+        <p className="footer-credit">
+          <span>© 2026 E.O创作</span>
+          <span aria-hidden="true">·</span>
+          <a href="mailto:arthurolan99@gmail.com">arthurolan99@gmail.com</a>
+        </p>
       </footer>
 
       {reviewOpen && (
