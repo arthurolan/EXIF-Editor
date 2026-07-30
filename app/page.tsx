@@ -616,7 +616,12 @@ export default function Home() {
         import("@uswriting/exiftool"),
         import("exifreader"),
       ]);
-      const result = await writeMetadata(file, writeTags);
+      // Some iPhone JPEGs contain an empty XMP dc:subject rdf:Bag. ExifTool
+      // reports that as a [minor] warning while still producing a valid output,
+      // but the WASM wrapper treats any stderr output as a failed operation.
+      // Suppress only ExifTool's minor warnings; real warnings and errors still
+      // flow through the wrapper and block export.
+      const result = await writeMetadata(file, writeTags, { args: ["-m"] });
       if (!result.success) throw new Error(result.error || t.writeFailed);
 
       const outputBuffer = result.data;
