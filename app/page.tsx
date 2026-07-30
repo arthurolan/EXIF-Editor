@@ -30,8 +30,224 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "re
 
 const MapPicker = dynamic(() => import("./map-picker"), {
   ssr: false,
-  loading: () => <div className="map-loading">正在准备地图…</div>,
 });
+
+type Language = "zh" | "en";
+
+const COPY = {
+  zh: {
+    home: "影刻·EXIF 首页",
+    localHeader: "图片只在你的浏览器中处理",
+    privacyLink: "关于隐私",
+    heroTitle: "重写照片的时间、地点和描述",
+    heroCopy1: "读取并编辑 JPEG 的 EXIF 信息，在地图上点选位置。",
+    heroCopy2: "不上传原片，不改变画质，只导出新的副本。",
+    flowLabel: "处理流程",
+    chooseStep: "选择照片",
+    editStep: "编辑信息",
+    verifyStep: "核验导出",
+    workspaceLabel: "EXIF 编辑工作区",
+    chooseAria: "选择 JPEG 照片",
+    startHere: "从这里开始",
+    dropTitle: "把一张照片拖到这里",
+    dropCopy: "或从设备中选择一张 JPEG 图片",
+    reading: "正在读取…",
+    choosePhoto: "选择照片",
+    maxSize: "单张最大 100 MB",
+    neverUpload: "不会上传",
+    changePhoto: "更换照片",
+    c2paWarning: "检测到 Content Credentials / C2PA 信息；修改元数据可能影响其验证结果。",
+    previewAlt: "待编辑照片预览",
+    cameraSettings: "拍摄参数",
+    readOnly: "只读",
+    noCameraSettings: "这张照片没有可显示的相机参数。",
+    showTags: "查看全部已读取标签",
+    location: "位置",
+    wgsHint: "写入 EXIF 的坐标始终使用 WGS-84",
+    gpsModes: "GPS 处理方式",
+    keepLocation: "保留原位置",
+    editLocation: "修改位置",
+    addLocation: "添加位置",
+    removeLocation: "删除位置",
+    removeGpsTitle: "将完整删除 GPS 信息",
+    removeGpsCopy: "经纬度、海拔、方向、GPS 时间等整个 GPS IFD 都会被清除。",
+    originalCoordinates: "原始坐标",
+    noGps: "照片中没有 GPS 信息",
+    latitude: "纬度",
+    longitude: "经度",
+    coordinateHint: "南纬和西经请输入负数；例如悉尼约为 −33.8688, 151.2093",
+    pickOnMap: "在地图上点选位置",
+    mapConsent: "点击后才会加载 OpenStreetMap 图块，图块服务会获知当前视野附近区域",
+    altitude: "海拔",
+    metresOptional: "米，可选",
+    exampleAltitude: "例如 12.5",
+    direction: "拍摄方向",
+    degreesOptional: "0–359°，可选",
+    exampleDirection: "例如 90",
+    timeAndText: "时间与文字",
+    commonFields: "仅修改常用、兼容性较好的字段",
+    dateTaken: "拍摄时间",
+    artist: "作者",
+    artistPlaceholder: "摄影者姓名",
+    copyright: "版权",
+    copyrightPlaceholder: "© 2026 姓名",
+    description: "图像描述",
+    descriptionPlaceholder: "为这张照片写下一段说明…",
+    undoAll: "撤销全部修改",
+    changesPending: "项待写入",
+    noChanges: "尚无修改",
+    reviewExport: "核对并导出副本",
+    verificationNote: "GPS 已复核 · 压缩图像数据未改变",
+    privacyEyebrow: "你的照片，属于你",
+    privacyTitle: "我们不会看你的照片",
+    privacyCopy: "读取、修改和验证全部在当前浏览器标签页内完成。只有你主动打开地图时，地图图块才会联网加载。",
+    localTitle: "本地处理",
+    localCopy: "照片不会发送到服务器，也不会被保存。",
+    losslessTitle: "无损写入",
+    losslessCopy: "只改写元数据段，不使用 Canvas 重压缩图片。",
+    copyTitle: "导出副本",
+    copyCopy: "默认生成带有 _edited 后缀的新文件，不覆盖原片。",
+    verifyTitle: "双重验证",
+    verifyCopy: "导出前重新读取 EXIF，并比对 JPEG 压缩数据指纹。",
+    footerCopy: "照片只在浏览器本地处理，默认导出新的副本。",
+    close: "关闭",
+    reviewKicker: "导出前确认",
+    reviewTitle: "这些信息将被写入副本",
+    reviewCopy: "原片不会被覆盖。写入后会重新读取 EXIF，并确认 JPEG 压缩图像数据保持不变。",
+    outputFile: "输出文件",
+    writing: "正在写入并验证…",
+    confirmDownload: "确认写入并下载",
+    unset: "未设置",
+    camera: "相机",
+    lens: "镜头",
+    aperture: "光圈",
+    shutter: "快门",
+    focalLength: "焦距",
+    gpsLocation: "GPS 位置",
+    gpsExists: "存在 GPS 信息",
+    gpsRemoved: "完整删除 GPS IFD",
+    gpsCoordinates: "GPS 坐标",
+    jpegOnly: "首版仅支持 JPEG 图片（.jpg 或 .jpeg）。",
+    fileTooLarge: "图片超过 100 MB。请先选择体积更小的 JPEG 文件。",
+    parseFailed: "没有成功解析这张图片。文件可能已损坏，或包含暂不支持的元数据结构。",
+    invalidCoordinates: "请输入有效的 WGS-84 经纬度：纬度范围 −90～90，经度范围 −180～180。",
+    nothingToWrite: "还没有需要写入的修改。",
+    writingMetadata: "正在本地写入元数据…",
+    writeFailed: "ExifTool 写入失败",
+    verifyingFile: "正在重新读取并核验导出文件…",
+    gpsVerificationFailed: "写入后的 GPS 复核未通过，已阻止下载。",
+    fieldVerificationFailed: "写入后的字段复核未通过，已阻止下载。",
+    pixelsChanged: "检测到 JPEG 压缩图像数据发生变化，已阻止下载。",
+    exported: "已验证并导出",
+    exportFailed: "导出失败，请换一张 JPEG 后重试。",
+  },
+  en: {
+    home: "Yingke · EXIF home",
+    localHeader: "Your image stays in your browser",
+    privacyLink: "Privacy",
+    heroTitle: "Rewrite a photo’s time, place, and description",
+    heroCopy1: "Read and edit JPEG EXIF data, or choose a location on the map.",
+    heroCopy2: "Your original never leaves the browser or gets recompressed.",
+    flowLabel: "Workflow",
+    chooseStep: "Choose photo",
+    editStep: "Edit metadata",
+    verifyStep: "Verify & export",
+    workspaceLabel: "EXIF editing workspace",
+    chooseAria: "Choose a JPEG photo",
+    startHere: "START HERE",
+    dropTitle: "Drop a photo here",
+    dropCopy: "or choose a JPEG image from your device",
+    reading: "Reading…",
+    choosePhoto: "Choose photo",
+    maxSize: "Up to 100 MB",
+    neverUpload: "Never uploaded",
+    changePhoto: "Change photo",
+    c2paWarning: "Content Credentials / C2PA data detected. Editing metadata may affect verification.",
+    previewAlt: "Photo preview",
+    cameraSettings: "Camera settings",
+    readOnly: "Read only",
+    noCameraSettings: "No camera settings were found in this photo.",
+    showTags: "Show all detected tags",
+    location: "Location",
+    wgsHint: "Coordinates written to EXIF always use WGS-84",
+    gpsModes: "GPS editing mode",
+    keepLocation: "Keep original",
+    editLocation: "Edit location",
+    addLocation: "Add location",
+    removeLocation: "Remove location",
+    removeGpsTitle: "All GPS data will be removed",
+    removeGpsCopy: "The complete GPS IFD—including coordinates, altitude, direction, and GPS time—will be cleared.",
+    originalCoordinates: "Original coordinates",
+    noGps: "This photo has no GPS data",
+    latitude: "Latitude",
+    longitude: "Longitude",
+    coordinateHint: "Use negative values for south and west; Sydney is about −33.8688, 151.2093.",
+    pickOnMap: "Choose a location on the map",
+    mapConsent: "OpenStreetMap tiles load only after this click, revealing the approximate map area to the tile service.",
+    altitude: "Altitude",
+    metresOptional: "metres, optional",
+    exampleAltitude: "e.g. 12.5",
+    direction: "Direction",
+    degreesOptional: "0–359°, optional",
+    exampleDirection: "e.g. 90",
+    timeAndText: "Time & text",
+    commonFields: "Only common, widely compatible fields can be edited",
+    dateTaken: "Date taken",
+    artist: "Artist",
+    artistPlaceholder: "Photographer’s name",
+    copyright: "Copyright",
+    copyrightPlaceholder: "© 2026 Name",
+    description: "Image description",
+    descriptionPlaceholder: "Write a note about this photo…",
+    undoAll: "Undo all changes",
+    changesPending: "changes pending",
+    noChanges: "No changes yet",
+    reviewExport: "Review & export copy",
+    verificationNote: "GPS verified · Compressed image data unchanged",
+    privacyEyebrow: "Your photo belongs to you",
+    privacyTitle: "We won’t look at your photo",
+    privacyCopy: "Reading, editing, and verification all happen in this browser tab. Map tiles connect to the internet only after you open the map.",
+    localTitle: "Local processing",
+    localCopy: "Your photo is never sent to or stored on a server.",
+    losslessTitle: "Lossless editing",
+    losslessCopy: "Only metadata segments change; the image is never recompressed through Canvas.",
+    copyTitle: "Export a copy",
+    copyCopy: "A new file with an _edited suffix is created. Your original is never overwritten.",
+    verifyTitle: "Double verification",
+    verifyCopy: "EXIF is read again before export and the compressed JPEG data fingerprint is compared.",
+    footerCopy: "Photos are processed locally in your browser and exported as new copies.",
+    close: "Close",
+    reviewKicker: "BEFORE EXPORT",
+    reviewTitle: "These changes will be written to the copy",
+    reviewCopy: "Your original will not be overwritten. EXIF is read again after writing and the compressed JPEG image data is checked.",
+    outputFile: "Output file",
+    writing: "Writing & verifying…",
+    confirmDownload: "Write changes & download",
+    unset: "Not set",
+    camera: "Camera",
+    lens: "Lens",
+    aperture: "Aperture",
+    shutter: "Shutter",
+    focalLength: "Focal length",
+    gpsLocation: "GPS location",
+    gpsExists: "GPS data exists",
+    gpsRemoved: "Remove complete GPS IFD",
+    gpsCoordinates: "GPS coordinates",
+    jpegOnly: "This first version supports JPEG images only (.jpg or .jpeg).",
+    fileTooLarge: "This image is larger than 100 MB. Please choose a smaller JPEG file.",
+    parseFailed: "This image could not be parsed. It may be damaged or contain an unsupported metadata structure.",
+    invalidCoordinates: "Enter valid WGS-84 coordinates: latitude −90 to 90 and longitude −180 to 180.",
+    nothingToWrite: "There are no changes to write yet.",
+    writingMetadata: "Writing metadata locally…",
+    writeFailed: "ExifTool could not write the metadata",
+    verifyingFile: "Reading and verifying the exported file…",
+    gpsVerificationFailed: "GPS verification failed after writing. The download was blocked.",
+    fieldVerificationFailed: "Field verification failed after writing. The download was blocked.",
+    pixelsChanged: "The compressed JPEG image data changed. The download was blocked.",
+    exported: "Verified and exported",
+    exportFailed: "Export failed. Please try another JPEG.",
+  },
+} as const;
 
 type ExifTag = {
   value?: unknown;
@@ -125,7 +341,7 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
-const display = (value: string, fallback = "未设置"): string => value.trim() || fallback;
+const display = (value: string, fallback: string): string => value.trim() || fallback;
 
 const getImageDimensions = (url: string): Promise<{ width: number; height: number }> =>
   new Promise((resolve, reject) => {
@@ -165,6 +381,7 @@ const digest = async (bytes: Uint8Array): Promise<string> => {
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [language, setLanguage] = useState<Language>("zh");
   const [file, setFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -182,6 +399,22 @@ export default function Home() {
   const [verified, setVerified] = useState(false);
   const [pixelVerified, setPixelVerified] = useState(false);
   const [c2paDetected, setC2paDetected] = useState(false);
+  const t = COPY[language];
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedLanguage = window.localStorage.getItem("yingke-exif-language");
+      const preferredLanguage: Language =
+        savedLanguage === "zh" || savedLanguage === "en"
+          ? savedLanguage
+          : navigator.language.toLowerCase().startsWith("zh")
+            ? "zh"
+            : "en";
+      setLanguage(preferredLanguage);
+      document.documentElement.lang = preferredLanguage === "zh" ? "zh-CN" : "en";
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -195,6 +428,14 @@ export default function Home() {
     setStatus("");
   };
 
+  const changeLanguage = (nextLanguage: Language) => {
+    setLanguage(nextLanguage);
+    window.localStorage.setItem("yingke-exif-language", nextLanguage);
+    document.documentElement.lang = nextLanguage === "zh" ? "zh-CN" : "en";
+    setError("");
+    setStatus("");
+  };
+
   const readFile = async (selected: File) => {
     setError("");
     setStatus("");
@@ -203,11 +444,11 @@ export default function Home() {
     setReviewOpen(false);
 
     if (!["image/jpeg", "image/jpg"].includes(selected.type) && !/\.jpe?g$/i.test(selected.name)) {
-      setError("首版仅支持 JPEG 图片（.jpg 或 .jpeg）。");
+      setError(t.jpegOnly);
       return;
     }
     if (selected.size > MAX_FILE_SIZE) {
-      setError("图片超过 100 MB。请先选择体积更小的 JPEG 文件。");
+      setError(t.fileTooLarge);
       return;
     }
 
@@ -253,7 +494,7 @@ export default function Home() {
       );
     } catch (cause) {
       console.error(cause);
-      setError("没有成功解析这张图片。文件可能已损坏，或包含暂不支持的元数据结构。");
+      setError(t.parseFailed);
     } finally {
       setBusy(false);
     }
@@ -289,46 +530,48 @@ export default function Home() {
   const diffs = useMemo<DiffItem[]>(() => {
     const items: DiffItem[] = [];
     const push = (label: string, before: string, after: string) => {
-      if (before !== after) items.push({ label, before: display(before), after: display(after) });
+      if (before !== after) {
+        items.push({ label, before: display(before, t.unset), after: display(after, t.unset) });
+      }
     };
 
-    push("拍摄时间", original.dateTime, form.dateTime);
-    push("作者", original.artist, form.artist);
-    push("版权", original.copyright, form.copyright);
-    push("图像描述", original.description, form.description);
+    push(t.dateTaken, original.dateTime, form.dateTime);
+    push(t.artist, original.artist, form.artist);
+    push(t.copyright, original.copyright, form.copyright);
+    push(t.description, original.description, form.description);
 
     if (gpsMode === "remove" && (original.latitude || original.longitude || original.altitude)) {
       items.push({
-        label: "GPS 位置",
+        label: t.gpsLocation,
         before:
           original.latitude && original.longitude
             ? `${original.latitude}, ${original.longitude}`
-            : "存在 GPS 信息",
-        after: "完整删除 GPS IFD",
+            : t.gpsExists,
+        after: t.gpsRemoved,
         kind: "danger",
       });
     } else if (gpsMode === "edit") {
       push(
-        "GPS 坐标",
+        t.gpsCoordinates,
         original.latitude && original.longitude
           ? `${original.latitude}, ${original.longitude}`
           : "",
         form.latitude && form.longitude ? `${form.latitude}, ${form.longitude}` : "",
       );
-      push("海拔", original.altitude, form.altitude);
-      push("拍摄方向", original.direction, form.direction);
+      push(t.altitude, original.altitude, form.altitude);
+      push(t.direction, original.direction, form.direction);
     }
     return items;
-  }, [form, gpsMode, original]);
+  }, [form, gpsMode, original, t]);
 
   const openReview = () => {
     setError("");
     if (gpsMode === "edit" && !hasValidCoordinates) {
-      setError("请输入有效的 WGS-84 经纬度：纬度范围 −90～90，经度范围 −180～180。");
+      setError(t.invalidCoordinates);
       return;
     }
     if (!diffs.length) {
-      setError("还没有需要写入的修改。");
+      setError(t.nothingToWrite);
       return;
     }
     setReviewOpen(true);
@@ -338,7 +581,7 @@ export default function Home() {
     if (!file) return;
     setBusy(true);
     setError("");
-    setStatus("正在本地写入元数据…");
+    setStatus(t.writingMetadata);
     setVerified(false);
     setPixelVerified(false);
 
@@ -374,13 +617,13 @@ export default function Home() {
         import("exifreader"),
       ]);
       const result = await writeMetadata(file, writeTags);
-      if (!result.success) throw new Error(result.error || "ExifTool 写入失败");
+      if (!result.success) throw new Error(result.error || t.writeFailed);
 
       const outputBuffer = result.data;
       const outputName = `${file.name.replace(/\.jpe?g$/i, "")}_edited.jpg`;
       const outputFile = new File([outputBuffer], outputName, { type: "image/jpeg" });
 
-      setStatus("正在重新读取并核验导出文件…");
+      setStatus(t.verifyingFile);
       const verifiedTags = (await ExifReader.load(outputFile, {
         includeUnknown: true,
       })) as ExifTags;
@@ -419,9 +662,9 @@ export default function Home() {
 
       setVerified(gpsOk && editableFieldsOk);
       setPixelVerified(samePixels);
-      if (!gpsOk) throw new Error("写入后的 GPS 复核未通过，已阻止下载。");
-      if (!editableFieldsOk) throw new Error("写入后的字段复核未通过，已阻止下载。");
-      if (!samePixels) throw new Error("检测到 JPEG 压缩图像数据发生变化，已阻止下载。");
+      if (!gpsOk) throw new Error(t.gpsVerificationFailed);
+      if (!editableFieldsOk) throw new Error(t.fieldVerificationFailed);
+      if (!samePixels) throw new Error(t.pixelsChanged);
 
       const href = URL.createObjectURL(outputFile);
       const link = document.createElement("a");
@@ -431,11 +674,11 @@ export default function Home() {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(href), 2_000);
-      setStatus(`已验证并导出 ${outputName}`);
+      setStatus(`${t.exported} ${outputName}`);
       setReviewOpen(false);
     } catch (cause) {
       console.error(cause);
-      setError(cause instanceof Error ? cause.message : "导出失败，请换一张 JPEG 后重试。");
+      setError(cause instanceof Error ? cause.message : t.exportFailed);
       setStatus("");
       setReviewOpen(false);
     } finally {
@@ -445,18 +688,18 @@ export default function Home() {
 
   const hasFile = Boolean(file && fileInfo);
   const cameraRows = [
-    ["相机", firstTag(tags, ["Make"]), firstTag(tags, ["Model"])],
-    ["镜头", firstTag(tags, ["LensModel", "Lens"])],
-    ["光圈", firstTag(tags, ["FNumber", "ApertureValue"])],
-    ["快门", firstTag(tags, ["ExposureTime"])],
+    [t.camera, firstTag(tags, ["Make"]), firstTag(tags, ["Model"])],
+    [t.lens, firstTag(tags, ["LensModel", "Lens"])],
+    [t.aperture, firstTag(tags, ["FNumber", "ApertureValue"])],
+    [t.shutter, firstTag(tags, ["ExposureTime"])],
     ["ISO", firstTag(tags, ["ISOSpeedRatings", "PhotographicSensitivity"])],
-    ["焦距", firstTag(tags, ["FocalLength"])],
+    [t.focalLength, firstTag(tags, ["FocalLength"])],
   ];
 
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="影刻·EXIF 首页">
+        <a className="brand" href="#top" aria-label={t.home}>
           <span className="brand-mark" aria-hidden="true">
             <span />
           </span>
@@ -464,30 +707,50 @@ export default function Home() {
         </a>
         <div className="header-note">
           <LockKeyhole size={15} />
-          图片只在你的浏览器中处理
+          {t.localHeader}
         </div>
-        <a className="about-link" href="#privacy">
-          关于隐私
-        </a>
+        <div className="header-actions">
+          <div className="language-switch" role="group" aria-label="Language / 语言">
+            <button
+              type="button"
+              className={language === "zh" ? "active" : ""}
+              aria-pressed={language === "zh"}
+              onClick={() => changeLanguage("zh")}
+            >
+              中文
+            </button>
+            <button
+              type="button"
+              className={language === "en" ? "active" : ""}
+              aria-pressed={language === "en"}
+              onClick={() => changeLanguage("en")}
+            >
+              EN
+            </button>
+          </div>
+          <a className="about-link" href="#privacy">
+            {t.privacyLink}
+          </a>
+        </div>
       </header>
 
       <section className="hero" id="top">
         <div className="eyebrow"><span /> PRIVATE · LOCAL · LOSSLESS</div>
-        <h1>重写照片的时间、地点和描述</h1>
+        <h1>{t.heroTitle}</h1>
         <p>
-          读取并编辑 JPEG 的 EXIF 信息，在地图上点选位置。
-          <br />不上传原片，不改变画质，只导出新的副本。
+          {t.heroCopy1}
+          <br />{t.heroCopy2}
         </p>
-        <div className="hero-steps" aria-label="处理流程">
-          <span><b>01</b>选择照片</span>
+        <div className="hero-steps" aria-label={t.flowLabel}>
+          <span><b>01</b>{t.chooseStep}</span>
           <ArrowRight size={16} />
-          <span><b>02</b>编辑信息</span>
+          <span><b>02</b>{t.editStep}</span>
           <ArrowRight size={16} />
-          <span><b>03</b>核验导出</span>
+          <span><b>03</b>{t.verifyStep}</span>
         </div>
       </section>
 
-      <section className="workspace" aria-label="EXIF 编辑工作区">
+      <section className="workspace" aria-label={t.workspaceLabel}>
         {!hasFile ? (
           <div
             className={`dropzone ${dragging ? "is-dragging" : ""}`}
@@ -504,7 +767,7 @@ export default function Home() {
               type="file"
               accept=".jpg,.jpeg,image/jpeg"
               onChange={onInput}
-              aria-label="选择 JPEG 照片"
+              aria-label={t.chooseAria}
             />
             <div className="drop-visual" aria-hidden="true">
               <div className="photo-sheet sheet-back" />
@@ -514,17 +777,17 @@ export default function Home() {
               </div>
               <span className="pin-dot"><MapPin size={18} /></span>
             </div>
-            <p className="drop-kicker">从这里开始</p>
-            <h2>把一张照片拖到这里</h2>
-            <p>或从设备中选择一张 JPEG 图片</p>
+            <p className="drop-kicker">{t.startHere}</p>
+            <h2>{t.dropTitle}</h2>
+            <p>{t.dropCopy}</p>
             <button className="primary-button select-button" onClick={() => inputRef.current?.click()} disabled={busy}>
               {busy ? <RefreshCw className="spin" size={18} /> : <ImagePlus size={18} />}
-              {busy ? "正在读取…" : "选择照片"}
+              {busy ? t.reading : t.choosePhoto}
             </button>
             <div className="drop-meta">
               <span>JPG / JPEG</span>
-              <span>单张最大 100 MB</span>
-              <span><ShieldCheck size={14} />不会上传</span>
+              <span>{t.maxSize}</span>
+              <span><ShieldCheck size={14} />{t.neverUpload}</span>
             </div>
           </div>
         ) : (
@@ -538,7 +801,7 @@ export default function Home() {
                 </div>
               </div>
               <button className="text-button" onClick={() => inputRef.current?.click()}>
-                <Upload size={16} />更换照片
+                <Upload size={16} />{t.changePhoto}
               </button>
               <input ref={inputRef} className="sr-only" type="file" accept=".jpg,.jpeg,image/jpeg" onChange={onInput} />
             </div>
@@ -546,7 +809,7 @@ export default function Home() {
             {c2paDetected && (
               <div className="warning-banner">
                 <Fingerprint size={18} />
-                检测到 Content Credentials / C2PA 信息；修改元数据可能影响其验证结果。
+                {t.c2paWarning}
               </div>
             )}
 
@@ -554,13 +817,13 @@ export default function Home() {
               <aside className="preview-column">
                 <div className="image-frame">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewUrl} alt="待编辑照片预览" />
+                  <img src={previewUrl} alt={t.previewAlt} />
                 </div>
                 <div className="readonly-card">
                   <div className="card-title">
                     <Camera size={17} />
-                    <span>拍摄参数</span>
-                    <small>只读</small>
+                    <span>{t.cameraSettings}</span>
+                    <small>{t.readOnly}</small>
                   </div>
                   <dl>
                     {cameraRows.map(([label, ...values]) => {
@@ -574,10 +837,10 @@ export default function Home() {
                     })}
                   </dl>
                   {!cameraRows.some(([, ...values]) => values.some(Boolean)) && (
-                    <p className="empty-note">这张照片没有可显示的相机参数。</p>
+                    <p className="empty-note">{t.noCameraSettings}</p>
                   )}
                   <button className="details-toggle" onClick={() => setDetailsOpen((open) => !open)}>
-                    查看全部已读取标签
+                    {t.showTags}
                     <ChevronDown size={15} className={detailsOpen ? "rotate" : ""} />
                   </button>
                   {detailsOpen && (
@@ -595,15 +858,15 @@ export default function Home() {
                   <div className="section-heading">
                     <span className="section-icon"><MapPin size={18} /></span>
                     <div>
-                      <h2>位置</h2>
-                      <p>写入 EXIF 的坐标始终使用 WGS-84</p>
+                      <h2>{t.location}</h2>
+                      <p>{t.wgsHint}</p>
                     </div>
                   </div>
-                  <div className="segmented" role="group" aria-label="GPS 处理方式">
+                  <div className="segmented" role="group" aria-label={t.gpsModes}>
                     {([
-                      ["keep", "保留原位置"],
-                      ["edit", original.latitude ? "修改位置" : "添加位置"],
-                      ["remove", "删除位置"],
+                      ["keep", t.keepLocation],
+                      ["edit", original.latitude ? t.editLocation : t.addLocation],
+                      ["remove", t.removeLocation],
                     ] as const).map(([mode, label]) => (
                       <button
                         key={mode}
@@ -623,19 +886,19 @@ export default function Home() {
                     <div className="danger-panel">
                       <AlertTriangle size={19} />
                       <div>
-                        <strong>将完整删除 GPS 信息</strong>
-                        <p>经纬度、海拔、方向、GPS 时间等整个 GPS IFD 都会被清除。</p>
+                        <strong>{t.removeGpsTitle}</strong>
+                        <p>{t.removeGpsCopy}</p>
                       </div>
                     </div>
                   ) : gpsMode === "keep" ? (
                     <div className="keep-panel">
                       <Navigation size={18} />
                       <div>
-                        <span>原始坐标</span>
+                        <span>{t.originalCoordinates}</span>
                         <strong>
                           {original.latitude && original.longitude
                             ? `${original.latitude}, ${original.longitude}`
-                            : "照片中没有 GPS 信息"}
+                            : t.noGps}
                         </strong>
                       </div>
                     </div>
@@ -643,7 +906,7 @@ export default function Home() {
                     <>
                       <div className="coordinate-grid">
                         <label>
-                          <span>纬度 <small>Latitude</small></span>
+                          <span>{t.latitude} <small>Latitude</small></span>
                           <input
                             inputMode="decimal"
                             value={form.latitude}
@@ -652,7 +915,7 @@ export default function Home() {
                           />
                         </label>
                         <label>
-                          <span>经度 <small>Longitude</small></span>
+                          <span>{t.longitude} <small>Longitude</small></span>
                           <input
                             inputMode="decimal"
                             value={form.longitude}
@@ -663,20 +926,21 @@ export default function Home() {
                       </div>
                       <div className="coordinate-hint">
                         <CircleHelp size={14} />
-                        南纬和西经请输入负数；例如悉尼约为 −33.8688, 151.2093
+                        {t.coordinateHint}
                       </div>
 
                       {!mapLoaded ? (
                         <button className="map-consent" onClick={() => setMapLoaded(true)}>
                           <span><Map size={20} /></span>
                           <div>
-                            <strong>在地图上点选位置</strong>
-                            <small>点击后才会加载 OpenStreetMap 图块，图块服务会获知当前视野附近区域</small>
+                            <strong>{t.pickOnMap}</strong>
+                            <small>{t.mapConsent}</small>
                           </div>
                           <ArrowRight size={18} />
                         </button>
                       ) : (
                         <MapPicker
+                          language={language}
                           latitude={Number(form.latitude)}
                           longitude={Number(form.longitude)}
                           onChange={(latitude, longitude) => {
@@ -692,21 +956,21 @@ export default function Home() {
 
                       <div className="coordinate-grid compact">
                         <label>
-                          <span>海拔 <small>米，可选</small></span>
+                          <span>{t.altitude} <small>{t.metresOptional}</small></span>
                           <input
                             inputMode="decimal"
                             value={form.altitude}
                             onChange={(event) => assign("altitude", event.target.value)}
-                            placeholder="例如 12.5"
+                            placeholder={t.exampleAltitude}
                           />
                         </label>
                         <label>
-                          <span>拍摄方向 <small>0–359°，可选</small></span>
+                          <span>{t.direction} <small>{t.degreesOptional}</small></span>
                           <input
                             inputMode="decimal"
                             value={form.direction}
                             onChange={(event) => assign("direction", event.target.value)}
-                            placeholder="例如 90"
+                            placeholder={t.exampleDirection}
                           />
                         </label>
                       </div>
@@ -718,13 +982,13 @@ export default function Home() {
                   <div className="section-heading">
                     <span className="section-icon"><Clock3 size={18} /></span>
                     <div>
-                      <h2>时间与文字</h2>
-                      <p>仅修改常用、兼容性较好的字段</p>
+                      <h2>{t.timeAndText}</h2>
+                      <p>{t.commonFields}</p>
                     </div>
                   </div>
                   <div className="field-stack">
                     <label>
-                      <span>拍摄时间</span>
+                      <span>{t.dateTaken}</span>
                       <input
                         type="datetime-local"
                         value={form.dateTime}
@@ -733,22 +997,22 @@ export default function Home() {
                     </label>
                     <div className="two-fields">
                       <label>
-                        <span>作者</span>
-                        <input value={form.artist} onChange={(event) => assign("artist", event.target.value)} placeholder="摄影者姓名" />
+                        <span>{t.artist}</span>
+                        <input value={form.artist} onChange={(event) => assign("artist", event.target.value)} placeholder={t.artistPlaceholder} />
                       </label>
                       <label>
-                        <span>版权</span>
-                        <input value={form.copyright} onChange={(event) => assign("copyright", event.target.value)} placeholder="© 2026 姓名" />
+                        <span>{t.copyright}</span>
+                        <input value={form.copyright} onChange={(event) => assign("copyright", event.target.value)} placeholder={t.copyrightPlaceholder} />
                       </label>
                     </div>
                     <label>
-                      <span>图像描述</span>
+                      <span>{t.description}</span>
                       <textarea
                         rows={3}
                         maxLength={1000}
                         value={form.description}
                         onChange={(event) => assign("description", event.target.value)}
-                        placeholder="为这张照片写下一段说明…"
+                        placeholder={t.descriptionPlaceholder}
                       />
                       <small className="counter">{form.description.length} / 1000</small>
                     </label>
@@ -759,13 +1023,13 @@ export default function Home() {
 
             <div className="editor-footer">
               <button className="secondary-button" onClick={reset} disabled={!diffs.length || busy}>
-                <RotateCcw size={16} />撤销全部修改
+                <RotateCcw size={16} />{t.undoAll}
               </button>
               <div className="change-count">
-                {diffs.length ? <><span>{diffs.length}</span> 项待写入</> : "尚无修改"}
+                {diffs.length ? <><span>{diffs.length}</span> {t.changesPending}</> : t.noChanges}
               </div>
               <button className="primary-button export-button" onClick={openReview} disabled={busy || !diffs.length}>
-                <Sparkles size={17} />核对并导出副本
+                <Sparkles size={17} />{t.reviewExport}
               </button>
             </div>
           </div>
@@ -776,22 +1040,22 @@ export default function Home() {
           <div className={`message ${verified && pixelVerified ? "success-message" : "status-message"}`}>
             {verified && pixelVerified ? <Check size={17} /> : <RefreshCw className={busy ? "spin" : ""} size={17} />}
             <span>{status}</span>
-            {verified && pixelVerified && <small>GPS 已复核 · 压缩图像数据未改变</small>}
+            {verified && pixelVerified && <small>{t.verificationNote}</small>}
           </div>
         )}
       </section>
 
       <section className="trust-section" id="privacy">
         <div className="trust-intro">
-          <span className="eyebrow"><span /> 你的照片，属于你</span>
-          <h2>我们不会看你的照片</h2>
-          <p>读取、修改和验证全部在当前浏览器标签页内完成。只有你主动打开地图时，地图图块才会联网加载。</p>
+          <span className="eyebrow"><span /> {t.privacyEyebrow}</span>
+          <h2>{t.privacyTitle}</h2>
+          <p>{t.privacyCopy}</p>
         </div>
         <div className="trust-grid">
-          <article><LockKeyhole size={22} /><strong>本地处理</strong><p>照片不会发送到服务器，也不会被保存。</p></article>
-          <article><PenLine size={22} /><strong>无损写入</strong><p>只改写元数据段，不使用 Canvas 重压缩图片。</p></article>
-          <article><Download size={22} /><strong>导出副本</strong><p>默认生成带有 _edited 后缀的新文件，不覆盖原片。</p></article>
-          <article><ShieldCheck size={22} /><strong>双重验证</strong><p>导出前重新读取 EXIF，并比对 JPEG 压缩数据指纹。</p></article>
+          <article><LockKeyhole size={22} /><strong>{t.localTitle}</strong><p>{t.localCopy}</p></article>
+          <article><PenLine size={22} /><strong>{t.losslessTitle}</strong><p>{t.losslessCopy}</p></article>
+          <article><Download size={22} /><strong>{t.copyTitle}</strong><p>{t.copyCopy}</p></article>
+          <article><ShieldCheck size={22} /><strong>{t.verifyTitle}</strong><p>{t.verifyCopy}</p></article>
         </div>
       </section>
 
@@ -800,7 +1064,7 @@ export default function Home() {
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span>影刻<em>·EXIF</em></span>
         </div>
-        <p>照片只在浏览器本地处理，默认导出新的副本。</p>
+        <p>{t.footerCopy}</p>
         <p className="footer-credit">
           <span>© 2026 E.O创作</span>
           <span aria-hidden="true">·</span>
@@ -813,12 +1077,12 @@ export default function Home() {
           if (event.target === event.currentTarget && !busy) setReviewOpen(false);
         }}>
           <section className="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
-            <button className="modal-close" aria-label="关闭" onClick={() => setReviewOpen(false)} disabled={busy}>
+            <button className="modal-close" aria-label={t.close} onClick={() => setReviewOpen(false)} disabled={busy}>
               <X size={20} />
             </button>
-            <span className="modal-kicker">导出前确认</span>
-            <h2 id="review-title">这些信息将被写入副本</h2>
-            <p className="modal-copy">原片不会被覆盖。写入后会重新读取 EXIF，并确认 JPEG 压缩图像数据保持不变。</p>
+            <span className="modal-kicker">{t.reviewKicker}</span>
+            <h2 id="review-title">{t.reviewTitle}</h2>
+            <p className="modal-copy">{t.reviewCopy}</p>
             <div className="diff-list">
               {diffs.map((diff) => (
                 <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>
@@ -831,12 +1095,12 @@ export default function Home() {
             </div>
             <div className="output-name">
               <FileImage size={18} />
-              <span>输出文件</span>
+              <span>{t.outputFile}</span>
               <strong>{file?.name.replace(/\.jpe?g$/i, "")}_edited.jpg</strong>
             </div>
             <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
               {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
-              {busy ? "正在写入并验证…" : "确认写入并下载"}
+              {busy ? t.writing : t.confirmDownload}
             </button>
           </section>
         </div>

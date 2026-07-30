@@ -5,6 +5,7 @@ import { LocateFixed } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 type Props = {
+  language: "zh" | "en";
   latitude: number;
   longitude: number;
   onChange: (latitude: number, longitude: number) => void;
@@ -12,7 +13,7 @@ type Props = {
 
 const DEFAULT_POSITION: [number, number] = [31.230416, 121.473701];
 
-export default function MapPicker({ latitude, longitude, onChange }: Props) {
+export default function MapPicker({ language, latitude, longitude, onChange }: Props) {
   const mapNode = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markerRef = useRef<CircleMarker | null>(null);
@@ -86,11 +87,17 @@ export default function MapPicker({ latitude, longitude, onChange }: Props) {
 
   return (
     <div className="map-shell">
-      <div ref={mapNode} className="map-canvas" aria-label="位置点选地图" />
+      <div
+        ref={mapNode}
+        className="map-canvas"
+        aria-label={language === "zh" ? "位置点选地图" : "Location picker map"}
+      />
       <div className="map-toolbar">
-        <span>点击地图选择位置 · WGS-84</span>
+        <span>
+          {language === "zh" ? "点击地图选择位置 · WGS-84" : "Click the map to choose a location · WGS-84"}
+        </span>
         <button type="button" onClick={locate}>
-          <LocateFixed size={15} />定位到我
+          <LocateFixed size={15} />{language === "zh" ? "定位到我" : "Use my location"}
         </button>
       </div>
     </div>
