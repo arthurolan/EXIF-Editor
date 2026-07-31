@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { canShareFileOnMobile, outputNameFor } from "./export-delivery.mjs";
 
 const MapPicker = dynamic(() => import("./map-picker"), {
   ssr: false,
@@ -116,7 +117,16 @@ const COPY = {
     reviewCopy: "原片不会被覆盖。写入后会重新读取 EXIF，并确认 JPEG 压缩图像数据保持不变。",
     outputFile: "输出文件",
     writing: "正在写入并验证…",
-    confirmDownload: "确认写入并下载",
+    confirmDownload: "确认写入并验证",
+    readyKicker: "已完成验证",
+    readyTitle: "副本已准备好",
+    readyCopy: "点击下方按钮打开系统共享菜单，然后选择“存储到文件”、照片或其他应用。",
+    shareAndSave: "共享 / 存储到文件",
+    directDownload: "直接下载（备用）",
+    directDownloadHint: "如果共享菜单不可用，可尝试直接下载。文件链接会一直保留到你关闭或重新导出。",
+    readyToSave: "已验证，等待你选择保存位置",
+    shareFailed: "无法打开系统共享菜单，请使用“直接下载（备用）”。",
+    downloadStarted: "已交给浏览器下载",
     unset: "未设置",
     camera: "相机",
     lens: "镜头",
@@ -222,7 +232,16 @@ const COPY = {
     reviewCopy: "Your original will not be overwritten. EXIF is read again after writing and the compressed JPEG image data is checked.",
     outputFile: "Output file",
     writing: "Writing & verifying…",
-    confirmDownload: "Write changes & download",
+    confirmDownload: "Write changes & verify",
+    readyKicker: "VERIFIED",
+    readyTitle: "Your copy is ready",
+    readyCopy: "Open the system share sheet, then choose Save to Files, Photos, or another app.",
+    shareAndSave: "Share / Save to Files",
+    directDownload: "Direct download (fallback)",
+    directDownloadHint: "If the share sheet is unavailable, try the direct download. The file link stays active until you close or export again.",
+    readyToSave: "Verified and ready for you to choose a save location",
+    shareFailed: "The system share sheet could not be opened. Use the direct download fallback.",
+    downloadStarted: "Download handed to the browser",
     unset: "Not set",
     camera: "Camera",
     lens: "Lens",
@@ -396,6 +415,8 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [preparedFile, setPreparedFile] = useState<File | null>(null);
+  const [preparedUrl, setPreparedUrl] = useState("");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [verified, setVerified] = useState(false);
   const [pixelVerified, setPixelVerified] = useState(false);
@@ -422,6 +443,12 @@ export default function Home() {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (preparedUrl) URL.revokeObjectURL(preparedUrl);
+    };
+  }, [preparedUrl]);
 
   const assign = (key: keyof EditableData, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -595,7 +622,28 @@ export default function Home() {
       setError(t.nothingToWrite);
       return;
     }
+    setPreparedFile(null);
+    setPreparedUrl("");
     setReviewOpen(true);
+  };
+
+  const sharePreparedFile = async () => {
+    if (!preparedFile) return;
+    setError("");
+    try {
+      await navigator.share({
+        files: [preparedFile],
+        title: preparedFile.name,
+      });
+      setStatus(`${t.exported} ${preparedFile.name}`);
+      setReviewOpen(false);
+      setPreparedFile(null);
+      setPreparedUrl("");
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      console.error(cause);
+      setError(t.shareFailed);
+    }
   };
 
   const exportFile = async () => {
@@ -646,7 +694,7 @@ export default function Home() {
       if (!result.success) throw new Error(result.error || t.writeFailed);
 
       const outputBuffer = result.data;
-      const outputName = `${file.name.replace(/\.jpe?g$/i, "")}_edited.jpg`;
+      const outputName = outputNameFor(file.name);
       const outputFile = new File([outputBuffer], outputName, { type: "image/jpeg" });
 
       setStatus(t.verifyingFile);
@@ -692,16 +740,22 @@ export default function Home() {
       if (!editableFieldsOk) throw new Error(t.fieldVerificationFailed);
       if (!samePixels) throw new Error(t.pixelsChanged);
 
-      const href = URL.createObjectURL(outputFile);
-      const link = document.createElement("a");
-      link.href = href;
-      link.download = outputName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(href), 2_000);
-      setStatus(`${t.exported} ${outputName}`);
-      setReviewOpen(false);
+      if (canShareFileOnMobile(navigator, outputFile)) {
+        setPreparedFile(outputFile);
+        setPreparedUrl(URL.createObjectURL(outputFile));
+        setStatus(t.readyToSave);
+      } else {
+        const href = URL.createObjectURL(outputFile);
+        const link = document.createElement("a");
+        link.href = href;
+        link.download = outputName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
+        setStatus(`${t.exported} ${outputName}`);
+        setReviewOpen(false);
+      }
     } catch (cause) {
       console.error(cause);
       setError(cause instanceof Error ? cause.message : t.exportFailed);
@@ -1114,28 +1168,49 @@ export default function Home() {
             <button className="modal-close" aria-label={t.close} onClick={() => setReviewOpen(false)} disabled={busy}>
               <X size={20} />
             </button>
-            <span className="modal-kicker">{t.reviewKicker}</span>
-            <h2 id="review-title">{t.reviewTitle}</h2>
-            <p className="modal-copy">{t.reviewCopy}</p>
-            <div className="diff-list">
-              {diffs.map((diff) => (
-                <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>
-                  <strong>{diff.label}</strong>
-                  <span>{diff.before}</span>
-                  <ArrowRight size={15} />
-                  <b>{diff.after}</b>
-                </div>
-              ))}
-            </div>
+            <span className="modal-kicker">{preparedFile ? t.readyKicker : t.reviewKicker}</span>
+            <h2 id="review-title">{preparedFile ? t.readyTitle : t.reviewTitle}</h2>
+            <p className="modal-copy">{preparedFile ? t.readyCopy : t.reviewCopy}</p>
+            {!preparedFile && (
+              <div className="diff-list">
+                {diffs.map((diff) => (
+                  <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>
+                    <strong>{diff.label}</strong>
+                    <span>{diff.before}</span>
+                    <ArrowRight size={15} />
+                    <b>{diff.after}</b>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="output-name">
               <FileImage size={18} />
               <span>{t.outputFile}</span>
-              <strong>{file?.name.replace(/\.jpe?g$/i, "")}_edited.jpg</strong>
+              <strong>{file ? outputNameFor(file.name) : ""}</strong>
             </div>
-            <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
-              {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
-              {busy ? t.writing : t.confirmDownload}
-            </button>
+            {preparedFile ? (
+              <div className="delivery-actions">
+                <button className="primary-button modal-action" onClick={() => void sharePreparedFile()}>
+                  <Upload size={18} />
+                  {t.shareAndSave}
+                </button>
+                <a
+                  className="secondary-button modal-action fallback-download"
+                  href={preparedUrl}
+                  download={preparedFile.name}
+                  onClick={() => setStatus(`${t.downloadStarted} ${preparedFile.name}`)}
+                >
+                  <Download size={18} />
+                  {t.directDownload}
+                </a>
+                <small>{t.directDownloadHint}</small>
+              </div>
+            ) : (
+              <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
+                {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
+                {busy ? t.writing : t.confirmDownload}
+              </button>
+            )}
           </section>
         </div>
       )}
