@@ -60,8 +60,19 @@ const COPY = {
     c2paWarning: "检测到 Content Credentials / C2PA 信息；修改元数据可能影响其验证结果。",
     previewAlt: "待编辑照片预览",
     cameraSettings: "拍摄参数",
-    readOnly: "只读",
-    noCameraSettings: "这张照片没有可显示的相机参数。",
+    editable: "可编辑",
+    cameraSettingsHint: "可为胶片扫描或缺失元数据的照片手动补充",
+    make: "品牌",
+    model: "型号",
+    lensModel: "镜头型号",
+    makePlaceholder: "例如 Leica",
+    modelPlaceholder: "例如 M6",
+    lensPlaceholder: "例如 Summicron-M 35mm f/2",
+    aperturePlaceholder: "例如 2.8",
+    shutterPlaceholder: "例如 1/125",
+    isoPlaceholder: "例如 400",
+    focalLengthPlaceholder: "例如 35",
+    invalidCameraSettings: "请检查拍摄参数：光圈、快门速度和焦距须为正数，ISO 须为正整数；不需要的字段可以留空。",
     showTags: "查看全部已读取标签",
     location: "位置",
     wgsHint: "写入 EXIF 的坐标始终使用 WGS-84",
@@ -175,8 +186,19 @@ const COPY = {
     c2paWarning: "Content Credentials / C2PA data detected. Editing metadata may affect verification.",
     previewAlt: "Photo preview",
     cameraSettings: "Camera settings",
-    readOnly: "Read only",
-    noCameraSettings: "No camera settings were found in this photo.",
+    editable: "Editable",
+    cameraSettingsHint: "Add settings manually for film scans or photos with missing metadata",
+    make: "Make",
+    model: "Model",
+    lensModel: "Lens model",
+    makePlaceholder: "e.g. Leica",
+    modelPlaceholder: "e.g. M6",
+    lensPlaceholder: "e.g. Summicron-M 35mm f/2",
+    aperturePlaceholder: "e.g. 2.8",
+    shutterPlaceholder: "e.g. 1/125",
+    isoPlaceholder: "e.g. 400",
+    focalLengthPlaceholder: "e.g. 35",
+    invalidCameraSettings: "Check the camera settings: aperture, shutter speed, and focal length must be positive; ISO must be a positive integer. Leave unused fields blank.",
     showTags: "Show all detected tags",
     location: "Location",
     wgsHint: "Coordinates written to EXIF always use WGS-84",
@@ -276,6 +298,13 @@ type ExifTag = {
 type ExifTags = Record<string, ExifTag>;
 
 type EditableData = {
+  make: string;
+  model: string;
+  lensModel: string;
+  aperture: string;
+  shutterSpeed: string;
+  iso: string;
+  focalLength: string;
   dateTime: string;
   artist: string;
   copyright: string;
@@ -303,6 +332,13 @@ type FileInfo = {
 };
 
 const EMPTY_DATA: EditableData = {
+  make: "",
+  model: "",
+  lensModel: "",
+  aperture: "",
+  shutterSpeed: "",
+  iso: "",
+  focalLength: "",
   dateTime: "",
   artist: "",
   copyright: "",
@@ -329,6 +365,38 @@ const firstTag = (tags: ExifTags, names: string[]): string => {
     if (value && value !== "undefined") return value;
   }
   return "";
+};
+
+const numericTag = (tags: ExifTags, names: string[], allowFraction = false): string => {
+  const value = firstTag(tags, names);
+  const pattern = allowFraction ? /\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|-?\d+(?:\.\d+)?/ : /-?\d+(?:\.\d+)?/;
+  return value.match(pattern)?.[0]?.replaceAll(" ", "") ?? "";
+};
+
+const positiveNumber = (value: string): boolean =>
+  value === "" || (Number.isFinite(Number(value)) && Number(value) > 0);
+
+const positiveExposure = (value: string): boolean => {
+  if (!value) return true;
+  const fraction = value.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+  if (fraction) return Number(fraction[1]) > 0 && Number(fraction[2]) > 0;
+  return positiveNumber(value);
+};
+
+const exposureValue = (value: string): number => {
+  const fraction = value.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+  return fraction ? Number(fraction[1]) / Number(fraction[2]) : Number(value);
+};
+
+const sameNumericValue = (actual: string, expected: string, exposure = false): boolean => {
+  if (!actual || !expected) return actual === expected;
+  const actualNumber = exposure ? exposureValue(actual) : Number(actual);
+  const expectedNumber = exposure ? exposureValue(expected) : Number(expected);
+  return (
+    Number.isFinite(actualNumber) &&
+    Number.isFinite(expectedNumber) &&
+    Math.abs(actualNumber - expectedNumber) <= Math.max(1e-9, Math.abs(expectedNumber) * 1e-6)
+  );
 };
 
 const parseCoordinate = (value: string): string => {
@@ -502,6 +570,13 @@ export default function Home() {
       const latitude = gpsCoordinate(loaded, "Latitude");
       const longitude = gpsCoordinate(loaded, "Longitude");
       const nextData: EditableData = {
+        make: firstTag(loaded, ["Make"]),
+        model: firstTag(loaded, ["Model"]),
+        lensModel: firstTag(loaded, ["LensModel", "Lens"]),
+        aperture: numericTag(loaded, ["FNumber", "ApertureValue"]),
+        shutterSpeed: numericTag(loaded, ["ExposureTime"], true),
+        iso: numericTag(loaded, ["ISOSpeedRatings", "PhotographicSensitivity"]),
+        focalLength: numericTag(loaded, ["FocalLength"]),
         dateTime: exifDateToInput(
           firstTag(loaded, ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]),
         ),
@@ -575,6 +650,12 @@ export default function Home() {
     Math.abs(Number(form.latitude)) <= 90 &&
     Math.abs(Number(form.longitude)) <= 180;
 
+  const hasValidCameraSettings =
+    positiveNumber(form.aperture) &&
+    positiveExposure(form.shutterSpeed) &&
+    (form.iso === "" || (/^\d+$/.test(form.iso) && Number(form.iso) > 0)) &&
+    positiveNumber(form.focalLength);
+
   const diffs = useMemo<DiffItem[]>(() => {
     const items: DiffItem[] = [];
     const push = (label: string, before: string, after: string) => {
@@ -583,6 +664,13 @@ export default function Home() {
       }
     };
 
+    push(t.make, original.make, form.make);
+    push(t.model, original.model, form.model);
+    push(t.lensModel, original.lensModel, form.lensModel);
+    push(t.aperture, original.aperture, form.aperture);
+    push(t.shutter, original.shutterSpeed, form.shutterSpeed);
+    push("ISO", original.iso, form.iso);
+    push(t.focalLength, original.focalLength, form.focalLength);
     push(t.dateTaken, original.dateTime, form.dateTime);
     push(t.artist, original.artist, form.artist);
     push(t.copyright, original.copyright, form.copyright);
@@ -614,6 +702,10 @@ export default function Home() {
 
   const openReview = () => {
     setError("");
+    if (!hasValidCameraSettings) {
+      setError(t.invalidCameraSettings);
+      return;
+    }
     if (gpsMode === "edit" && !hasValidCoordinates) {
       setError(t.invalidCoordinates);
       return;
@@ -656,6 +748,16 @@ export default function Home() {
 
     try {
       const writeTags: Record<string, string | number> = {};
+      if (form.make !== original.make) writeTags.Make = form.make;
+      if (form.model !== original.model) writeTags.Model = form.model;
+      if (form.lensModel !== original.lensModel) writeTags.LensModel = form.lensModel;
+      if (form.aperture !== original.aperture) {
+        writeTags.FNumber = form.aperture;
+        if (!form.aperture) writeTags.ApertureValue = "";
+      }
+      if (form.shutterSpeed !== original.shutterSpeed) writeTags.ExposureTime = form.shutterSpeed;
+      if (form.iso !== original.iso) writeTags.ISO = form.iso;
+      if (form.focalLength !== original.focalLength) writeTags.FocalLength = form.focalLength;
       if (form.dateTime !== original.dateTime) {
         writeTags.DateTimeOriginal = inputDateToExif(form.dateTime);
       }
@@ -712,6 +814,28 @@ export default function Home() {
               Math.abs(Number(verifiedLng) - Number(form.longitude)) < 0.000001
             : true;
       const editableFieldsOk =
+        (form.make === original.make || firstTag(verifiedTags, ["Make"]) === form.make) &&
+        (form.model === original.model || firstTag(verifiedTags, ["Model"]) === form.model) &&
+        (form.lensModel === original.lensModel ||
+          firstTag(verifiedTags, ["LensModel", "Lens"]) === form.lensModel) &&
+        (form.aperture === original.aperture ||
+          sameNumericValue(
+            numericTag(verifiedTags, ["FNumber", "ApertureValue"]),
+            form.aperture,
+          )) &&
+        (form.shutterSpeed === original.shutterSpeed ||
+          sameNumericValue(
+            numericTag(verifiedTags, ["ExposureTime"], true),
+            form.shutterSpeed,
+            true,
+          )) &&
+        (form.iso === original.iso ||
+          sameNumericValue(
+            numericTag(verifiedTags, ["ISOSpeedRatings", "PhotographicSensitivity"]),
+            form.iso,
+          )) &&
+        (form.focalLength === original.focalLength ||
+          sameNumericValue(numericTag(verifiedTags, ["FocalLength"]), form.focalLength)) &&
         (form.dateTime === original.dateTime ||
           exifDateToInput(
             firstTag(verifiedTags, ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]),
@@ -767,15 +891,6 @@ export default function Home() {
   };
 
   const hasFile = Boolean(file && fileInfo);
-  const cameraRows = [
-    [t.camera, firstTag(tags, ["Make"]), firstTag(tags, ["Model"])],
-    [t.lens, firstTag(tags, ["LensModel", "Lens"])],
-    [t.aperture, firstTag(tags, ["FNumber", "ApertureValue"])],
-    [t.shutter, firstTag(tags, ["ExposureTime"])],
-    ["ISO", firstTag(tags, ["ISOSpeedRatings", "PhotographicSensitivity"])],
-    [t.focalLength, firstTag(tags, ["FocalLength"])],
-  ];
-
   return (
     <main>
       <header className="site-header">
@@ -907,26 +1022,22 @@ export default function Home() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={previewUrl} alt={t.previewAlt} />
                 </div>
-                <div className="readonly-card">
+                <div className="camera-card">
                   <div className="card-title">
                     <Camera size={17} />
                     <span>{t.cameraSettings}</span>
-                    <small>{t.readOnly}</small>
+                    <small>{t.editable}</small>
                   </div>
-                  <dl>
-                    {cameraRows.map(([label, ...values]) => {
-                      const value = values.filter(Boolean).join(" ");
-                      return value ? (
-                        <div key={label}>
-                          <dt>{label}</dt>
-                          <dd>{value}</dd>
-                        </div>
-                      ) : null;
-                    })}
-                  </dl>
-                  {!cameraRows.some(([, ...values]) => values.some(Boolean)) && (
-                    <p className="empty-note">{t.noCameraSettings}</p>
-                  )}
+                  <p className="camera-hint">{t.cameraSettingsHint}</p>
+                  <div className="camera-fields">
+                    <label><span>{t.make}</span><input value={form.make} onChange={(event) => assign("make", event.target.value)} placeholder={t.makePlaceholder} /></label>
+                    <label><span>{t.model}</span><input value={form.model} onChange={(event) => assign("model", event.target.value)} placeholder={t.modelPlaceholder} /></label>
+                    <label className="wide"><span>{t.lensModel}</span><input value={form.lensModel} onChange={(event) => assign("lensModel", event.target.value)} placeholder={t.lensPlaceholder} /></label>
+                    <label><span>{t.aperture} <small>f/</small></span><input inputMode="decimal" value={form.aperture} onChange={(event) => assign("aperture", event.target.value)} placeholder={t.aperturePlaceholder} /></label>
+                    <label><span>{t.shutter} <small>s</small></span><input inputMode="text" value={form.shutterSpeed} onChange={(event) => assign("shutterSpeed", event.target.value)} placeholder={t.shutterPlaceholder} /></label>
+                    <label><span>ISO</span><input inputMode="numeric" value={form.iso} onChange={(event) => assign("iso", event.target.value)} placeholder={t.isoPlaceholder} /></label>
+                    <label><span>{t.focalLength} <small>mm</small></span><input inputMode="decimal" value={form.focalLength} onChange={(event) => assign("focalLength", event.target.value)} placeholder={t.focalLengthPlaceholder} /></label>
+                  </div>
                   <button className="details-toggle" onClick={() => setDetailsOpen((open) => !open)}>
                     {t.showTags}
                     <ChevronDown size={15} className={detailsOpen ? "rotate" : ""} />

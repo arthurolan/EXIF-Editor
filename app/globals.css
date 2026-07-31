@@ -546,7 +546,7 @@ button:disabled {
   object-fit: contain;
 }
 
-.readonly-card {
+.camera-card {
   margin-top: 18px;
   padding: 18px;
   border: 1px solid #d9d4c9;
@@ -577,33 +577,48 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.readonly-card dl {
-  margin: 0;
+.camera-hint {
+  margin: -6px 0 14px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
-.readonly-card dl > div {
+.camera-fields {
   display: grid;
-  grid-template-columns: 60px 1fr;
-  gap: 14px;
-  padding: 8px 0;
-  border-top: 1px solid rgba(32, 33, 30, 0.08);
-  font-size: 12px;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
 }
 
-.readonly-card dt {
-  color: var(--muted);
-}
-
-.readonly-card dd {
-  margin: 0;
-  text-align: right;
+.camera-fields label {
+  display: grid;
+  gap: 6px;
+  color: #4d4e49;
+  font-size: 11px;
   font-weight: 600;
-  word-break: break-word;
 }
 
-.empty-note {
+.camera-fields label.wide {
+  grid-column: 1 / -1;
+}
+
+.camera-fields label > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.camera-fields label > span small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.camera-fields input {
+  height: 38px;
+  min-width: 0;
+  padding: 0 9px;
+  font-size: 11px;
 }
 
 .details-toggle {
