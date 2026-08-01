@@ -1,8 +1,11 @@
 /// <reference lib="webworker" />
 
+import { fetchVerifiedExifToolWasm } from "./exif-write-runtime.mjs";
+
 type WriteRequest = {
   file: File;
   tags: Record<string, string | number>;
+  wasmUrl: string;
 };
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
@@ -25,7 +28,10 @@ workerScope.addEventListener("message", async (event: MessageEvent<WriteRequest>
     workerScope.postMessage({ type: "phase", phase: "writing" });
 
     try {
-      const result = await writeMetadata(event.data.file, event.data.tags, { args: ["-m"] });
+      const result = await writeMetadata(event.data.file, event.data.tags, {
+        args: ["-m"],
+        fetch: () => fetchVerifiedExifToolWasm(event.data.wasmUrl),
+      });
       if (!result.success || !result.data) {
         workerScope.postMessage({
           type: "result",

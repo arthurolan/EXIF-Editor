@@ -1,3 +1,5 @@
+import { resolveExifToolWasmUrl } from "./exif-write-runtime.mjs";
+
 export type ExifWritePhase = "loading" | "writing";
 
 type WorkerMessage =
@@ -47,6 +49,10 @@ export function writeMetadataInWorker(
       finish({ success: false, error: event.message || "ExifTool worker failed" });
     });
 
-    worker.postMessage({ file, tags });
+    worker.postMessage({
+      file,
+      tags,
+      wasmUrl: resolveExifToolWasmUrl(document.baseURI),
+    });
   });
 }

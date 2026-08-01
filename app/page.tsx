@@ -156,6 +156,7 @@ const COPY = {
     writingMetadata: "正在本地写入元数据…",
     preparingWriter: "正在准备本地写入工具…",
     writeTimedOut: "本地写入超过两分钟，已安全终止。请关闭其他占用内存的页面后重试。",
+    writerResourceFailed: "本地写入组件载入失败。请刷新页面后重试；若仍失败，请确认网站资源已完整更新。",
     writeFailed: "ExifTool 写入失败",
     verifyingFile: "正在重新读取并核验导出文件…",
     gpsVerificationFailed: "写入后的 GPS 复核未通过，已阻止下载。",
@@ -284,6 +285,7 @@ const COPY = {
     writingMetadata: "Writing metadata locally…",
     preparingWriter: "Preparing the local metadata writer…",
     writeTimedOut: "Local writing exceeded two minutes and was safely stopped. Close other memory-heavy tabs and try again.",
+    writerResourceFailed: "The local writer could not load. Refresh the page and try again; if it persists, the site assets may not have updated completely.",
     writeFailed: "ExifTool could not write the metadata",
     verifyingFile: "Reading and verifying the exported file…",
     gpsVerificationFailed: "GPS verification failed after writing. The download was blocked.",
@@ -800,7 +802,14 @@ export default function Home() {
         setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
       });
       if (!result.success) {
-        throw new Error(result.error === "EXIF_WRITE_TIMEOUT" ? t.writeTimedOut : result.error || t.writeFailed);
+        const resourceFailed = result.error.startsWith("EXIF_WASM_");
+        throw new Error(
+          result.error === "EXIF_WRITE_TIMEOUT"
+            ? t.writeTimedOut
+            : resourceFailed
+              ? t.writerResourceFailed
+              : result.error || t.writeFailed,
+        );
       }
 
       const outputBuffer = result.data;
