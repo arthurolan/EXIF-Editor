@@ -4,6 +4,8 @@ import maplibregl, { Map as MapLibreMap, Marker } from "maplibre-gl";
 import { ExternalLink, LocateFixed, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { appleMapsCoordinates } from "./coordinate-conversion.mjs";
+
 type Props = {
   language: "zh" | "en";
   latitude: number;
@@ -33,7 +35,8 @@ export default function MapPicker({ language, latitude, longitude, onChange }: P
   const [retryNonce, setRetryNonce] = useState(0);
   const appleMapsUrl = useMemo(() => {
     if (!hasValidCoordinates(latitude, longitude)) return null;
-    const coordinates = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+    const appleCoordinates = appleMapsCoordinates(latitude, longitude);
+    const coordinates = `${appleCoordinates.latitude.toFixed(6)},${appleCoordinates.longitude.toFixed(6)}`;
     return `https://maps.apple.com/?ll=${encodeURIComponent(coordinates)}&q=${encodeURIComponent(coordinates)}&z=16`;
   }, [latitude, longitude]);
 

@@ -154,6 +154,8 @@ const COPY = {
     invalidCoordinates: "请输入有效的 WGS-84 经纬度：纬度范围 −90～90，经度范围 −180～180。",
     nothingToWrite: "还没有需要写入的修改。",
     writingMetadata: "正在本地写入元数据…",
+    preparingWriter: "正在准备本地写入工具…",
+    writeTimedOut: "本地写入超过两分钟，已安全终止。请关闭其他占用内存的页面后重试。",
     writeFailed: "ExifTool 写入失败",
     verifyingFile: "正在重新读取并核验导出文件…",
     gpsVerificationFailed: "写入后的 GPS 复核未通过，已阻止下载。",
@@ -280,6 +282,8 @@ const COPY = {
     invalidCoordinates: "Enter valid WGS-84 coordinates: latitude −90 to 90 and longitude −180 to 180.",
     nothingToWrite: "There are no changes to write yet.",
     writingMetadata: "Writing metadata locally…",
+    preparingWriter: "Preparing the local metadata writer…",
+    writeTimedOut: "Local writing exceeded two minutes and was safely stopped. Close other memory-heavy tabs and try again.",
     writeFailed: "ExifTool could not write the metadata",
     verifyingFile: "Reading and verifying the exported file…",
     gpsVerificationFailed: "GPS verification failed after writing. The download was blocked.",
@@ -783,8 +787,8 @@ export default function Home() {
         }
       }
 
-      const [{ writeMetadata }, { default: ExifReader }] = await Promise.all([
-        import("@uswriting/exiftool"),
+      const [{ writeMetadataInWorker }, { default: ExifReader }] = await Promise.all([
+        import("./exif-write-client"),
         import("exifreader"),
       ]);
       // Some iPhone JPEGs contain an empty XMP dc:subject rdf:Bag. ExifTool
@@ -792,8 +796,12 @@ export default function Home() {
       // but the WASM wrapper treats any stderr output as a failed operation.
       // Suppress only ExifTool's minor warnings; real warnings and errors still
       // flow through the wrapper and block export.
-      const result = await writeMetadata(file, writeTags, { args: ["-m"] });
-      if (!result.success) throw new Error(result.error || t.writeFailed);
+      const result = await writeMetadataInWorker(file, writeTags, (phase) => {
+        setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
+      });
+      if (!result.success) {
+        throw new Error(result.error === "EXIF_WRITE_TIMEOUT" ? t.writeTimedOut : result.error || t.writeFailed);
+      }
 
       const outputBuffer = result.data;
       const outputName = outputNameFor(file.name);
@@ -1128,7 +1136,7 @@ export default function Home() {
                         {t.coordinateHint}
                       </div>
 
-                      {!mapLoaded ? (
+                      {!mapLoaded && !busy ? (
                         <button className="map-consent" onClick={() => setMapLoaded(true)}>
                           <span><Map size={20} /></span>
                           <div>
@@ -1137,7 +1145,7 @@ export default function Home() {
                           </div>
                           <ArrowRight size={18} />
                         </button>
-                      ) : (
+                      ) : mapLoaded && !busy ? (
                         <MapPicker
                           language={language}
                           latitude={Number(form.latitude)}
@@ -1151,7 +1159,7 @@ export default function Home() {
                             setVerified(false);
                           }}
                         />
-                      )}
+                      ) : null}
 
                       <div className="coordinate-grid compact">
                         <label>
@@ -1319,7 +1327,7 @@ export default function Home() {
             ) : (
               <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
                 {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
-                {busy ? t.writing : t.confirmDownload}
+                {busy ? status || t.writing : t.confirmDownload}
               </button>
             )}
           </section>
