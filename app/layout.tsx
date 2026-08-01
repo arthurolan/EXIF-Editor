@@ -3,7 +3,7 @@ import "./globals.css";
 
 const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const description =
-  "隐私优先的本地 JPEG EXIF 编辑工具。A privacy-first local JPEG EXIF editor for GPS, time, authorship, and descriptions.";
+  "隐私优先的本地 JPEG EXIF 编辑工具。A privacy-first local JPEG EXIF editor for camera settings, GPS, time, authorship, and descriptions.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description,
   openGraph: {
     title: "影刻·EXIF",
-    description: "重写照片的时间、地点和描述。本地处理，无损写入，安全导出。",
+    description: "编辑照片的 EXIF 信息。本地处理，无损写入，安全导出。",
     type: "website",
     url: siteUrl,
     images: [
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "影刻·EXIF",
-    description: "重写照片的时间、地点和描述。本地处理，无损写入，安全导出。",
+    description: "编辑照片的 EXIF 信息。本地处理，无损写入，安全导出。",
     images: [`${siteUrl}/og.png`],
   },
 };
