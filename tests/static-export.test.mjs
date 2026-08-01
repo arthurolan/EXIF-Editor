@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const outputRoot = new URL("../out/", import.meta.url);
@@ -16,4 +16,20 @@ test("exports a complete static GitHub Pages site", async () => {
   assert.match(html, /影刻/);
   assert.match(html, /_next\/static\//);
   assert.doesNotMatch(html, /x-forwarded-host|signin-with-chatgpt/);
+});
+
+test("ships the keyless map provider and Apple Maps fallback", async () => {
+  const chunksRoot = new URL("_next/static/chunks/", outputRoot);
+  const chunkNames = await readdir(chunksRoot, { recursive: true });
+  const javascriptChunks = chunkNames.filter((name) => name.endsWith(".js"));
+  const source = (
+    await Promise.all(
+      javascriptChunks.map((name) => readFile(new URL(name, chunksRoot), "utf8")),
+    )
+  ).join("\n");
+
+  assert.match(source, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.match(source, /maps\.apple\.com/);
+  assert.match(source, /地图暂时无法载入/);
+  assert.doesNotMatch(source, /tile\.openstreetmap\.org/);
 });

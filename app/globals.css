@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 :root {
   --ink: #20211e;
@@ -997,9 +997,51 @@ textarea:focus {
   background: #ebe7dd;
 }
 
+.map-frame {
+  position: relative;
+}
+
 .map-canvas,
 .map-loading {
   height: 300px;
+}
+
+.map-status {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--muted);
+  background: rgba(235, 231, 221, 0.9);
+  text-align: center;
+  font-size: 12px;
+}
+
+.map-error strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.map-error span {
+  max-width: 360px;
+  line-height: 1.55;
+}
+
+.map-error button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 5px;
+  color: #fff;
+  background: var(--accent-dark);
+  cursor: pointer;
 }
 
 .map-loading {
@@ -1024,8 +1066,15 @@ textarea:focus {
   color: var(--muted);
 }
 
-.map-toolbar button {
+.map-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+}
+
+.map-actions button,
+.map-actions a {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1036,14 +1085,37 @@ textarea:focus {
   background: #f9e4da;
   cursor: pointer;
   font-size: 10px;
+  line-height: 1.2;
+  text-decoration: none;
 }
 
-.leaflet-container {
+.maplibregl-map {
   font-family: inherit;
 }
 
-.leaflet-control-attribution {
+.maplibregl-ctrl-attrib {
   font-size: 9px;
+}
+
+.map-marker {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fffaf0;
+  border-radius: 50%;
+  background: #ef6b32;
+  box-shadow: 0 1px 5px rgba(32, 33, 30, 0.4);
+}
+
+@media (max-width: 620px) {
+  .map-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .map-actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 .trust-section {
