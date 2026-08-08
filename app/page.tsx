@@ -12,6 +12,7 @@ import {
   FileImage,
   Fingerprint,
   ImagePlus,
+  ListChecks,
   LockKeyhole,
   Map,
   MapPin,
@@ -28,6 +29,13 @@ import {
 import dynamic from "next/dynamic";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { canShareFileOnMobile, outputNameFor } from "./export-delivery.mjs";
+import { CLEANUP_PRESETS, CleanupPreset, MetadataField, normalizeExifToolFields } from "./metadata/schema";
+import {
+  SemanticFieldKey,
+  semanticConflicts,
+  semanticValueFromFields,
+  semanticWriteTags,
+} from "./metadata/semantic";
 
 const MapPicker = dynamic(() => import("./map-picker"), {
   ssr: false,
@@ -40,6 +48,7 @@ const COPY = {
     home: "影刻·EXIF 首页",
     localHeader: "图片只在你的浏览器中处理",
     privacyLink: "关于隐私",
+    versionBadge: "V2.0 工作流",
     heroTitle: "编辑照片的 EXIF 信息",
     heroCopy1: "读取并编辑 JPEG 的 EXIF 信息，在地图上点选位置。",
     heroCopy2: "不上传原片，不改变画质，只导出新的副本。",
@@ -99,15 +108,54 @@ const COPY = {
     timeAndText: "时间与文字",
     commonFields: "仅修改常用、兼容性较好的字段",
     dateTaken: "拍摄时间",
+    title: "标题",
+    titlePlaceholder: "例如 春日街角",
     artist: "作者",
     artistPlaceholder: "摄影者姓名",
     copyright: "版权",
     copyrightPlaceholder: "© 2026 姓名",
+    keywords: "关键词",
+    keywordsPlaceholder: "旅行, 胶片, 上海",
+    city: "城市",
+    cityPlaceholder: "例如 上海",
+    country: "国家/地区",
+    countryPlaceholder: "例如 中国",
     description: "图像描述",
     descriptionPlaceholder: "为这张照片写下一段说明…",
+    syncedFields: "兼容同步写入 EXIF / XMP / IPTC 对应字段",
+    conflictCheck: "冲突检查",
+    conflictHint: "检测 EXIF、XMP、IPTC 中语义相同但值不一致的字段。",
+    noConflicts: "未检测到常用语义字段冲突",
+    useThisValue: "采用此值",
+    allTagsBrowser: "全部标签浏览器",
+    allTagsHint: "按元数据组查看，MakerNotes 默认只读。",
+    detectedGroups: "检测到的元数据组",
+    writableTag: "可写",
+    readOnlyTag: "只读",
+    cleanupTitle: "隐私清理",
+    cleanupHint: "预设会作为删除指令写入副本，原片仍不会被覆盖。",
+    cleanupNone: "不清理",
+    cleanupPrivacy: "隐私清理",
+    cleanupSocial: "社交发布",
+    cleanupAppearance: "保留视觉外观",
+    cleanupFull: "彻底清空",
+    cleanupPrivacyCopy: "删除 GPS、序列号、缩略图和处理软件痕迹",
+    cleanupSocialCopy: "保留作者/版权/描述，删除 GPS、MakerNotes 和序列号",
+    cleanupAppearanceCopy: "删除大部分元数据，但保留 ICC 色彩配置",
+    cleanupFullCopy: "尽可能删除全部元数据，可能影响颜色、方向和认证",
+    cleanupDiff: "清理预设",
     undoAll: "撤销全部修改",
     changesPending: "项待写入",
     noChanges: "尚无修改",
+    changePreview: "修改摘要",
+    changePreviewHint: "选择导出前，可先核对本次会写入副本的字段。",
+    noChangePreview: "改动会实时出现在这里。",
+    protectedOriginal: "原片保护",
+    protectedOriginalCopy: "只生成新副本",
+    losslessCheck: "画质检查",
+    losslessCheckCopy: "导出前复核像素指纹",
+    browserOnlyCheck: "本地处理",
+    browserOnlyCheckCopy: "照片不上传服务器",
     reviewExport: "核对并导出副本",
     verificationNote: "GPS 已复核 · 压缩图像数据未改变",
     privacyEyebrow: "你的照片，属于你",
@@ -169,6 +217,7 @@ const COPY = {
     home: "Yingke · EXIF home",
     localHeader: "Your image stays in your browser",
     privacyLink: "Privacy",
+    versionBadge: "V2.0 workflow",
     heroTitle: "Edit Photo EXIF Metadata",
     heroCopy1: "Read and edit JPEG EXIF data, or choose a location on the map.",
     heroCopy2: "Your original never leaves the browser or gets recompressed.",
@@ -228,15 +277,54 @@ const COPY = {
     timeAndText: "Time & text",
     commonFields: "Only common, widely compatible fields can be edited",
     dateTaken: "Date taken",
+    title: "Title",
+    titlePlaceholder: "e.g. Spring street corner",
     artist: "Artist",
     artistPlaceholder: "Photographer’s name",
     copyright: "Copyright",
     copyrightPlaceholder: "© 2026 Name",
+    keywords: "Keywords",
+    keywordsPlaceholder: "travel, film, Shanghai",
+    city: "City",
+    cityPlaceholder: "e.g. Shanghai",
+    country: "Country / Region",
+    countryPlaceholder: "e.g. China",
     description: "Image description",
     descriptionPlaceholder: "Write a note about this photo…",
+    syncedFields: "Writes compatible EXIF / XMP / IPTC fields together",
+    conflictCheck: "Conflict check",
+    conflictHint: "Detects semantic mismatches across EXIF, XMP, and IPTC.",
+    noConflicts: "No common semantic conflicts detected",
+    useThisValue: "Use this value",
+    allTagsBrowser: "All tags browser",
+    allTagsHint: "Browse by metadata group. MakerNotes stay read-only by default.",
+    detectedGroups: "Detected metadata groups",
+    writableTag: "Writable",
+    readOnlyTag: "Read-only",
+    cleanupTitle: "Privacy cleanup",
+    cleanupHint: "Presets are written as deletion instructions to the copy. The original is still untouched.",
+    cleanupNone: "No cleanup",
+    cleanupPrivacy: "Privacy cleanup",
+    cleanupSocial: "Social publish",
+    cleanupAppearance: "Keep visual appearance",
+    cleanupFull: "Full metadata wipe",
+    cleanupPrivacyCopy: "Removes GPS, serial numbers, thumbnails, and processing software traces",
+    cleanupSocialCopy: "Keeps author/copyright/description; removes GPS, MakerNotes, and serials",
+    cleanupAppearanceCopy: "Removes most metadata but keeps the ICC color profile",
+    cleanupFullCopy: "Removes as much metadata as possible; may affect color, orientation, and credentials",
+    cleanupDiff: "Cleanup preset",
     undoAll: "Undo all changes",
     changesPending: "changes pending",
     noChanges: "No changes yet",
+    changePreview: "Change summary",
+    changePreviewHint: "Review the fields that will be written to the copy before exporting.",
+    noChangePreview: "Edits will appear here in real time.",
+    protectedOriginal: "Original protected",
+    protectedOriginalCopy: "Creates a new copy only",
+    losslessCheck: "Quality check",
+    losslessCheckCopy: "Pixel fingerprint verified before export",
+    browserOnlyCheck: "Local processing",
+    browserOnlyCheckCopy: "Photo is never uploaded",
     reviewExport: "Review & export copy",
     verificationNote: "GPS verified · Compressed image data unchanged",
     privacyEyebrow: "Your photo belongs to you",
@@ -312,8 +400,12 @@ type EditableData = {
   iso: string;
   focalLength: string;
   dateTime: string;
+  title: string;
   artist: string;
   copyright: string;
+  keywords: string;
+  city: string;
+  country: string;
   description: string;
   latitude: string;
   longitude: string;
@@ -346,8 +438,12 @@ const EMPTY_DATA: EditableData = {
   iso: "",
   focalLength: "",
   dateTime: "",
+  title: "",
   artist: "",
   copyright: "",
+  keywords: "",
+  city: "",
+  country: "",
   description: "",
   latitude: "",
   longitude: "",
@@ -480,9 +576,11 @@ export default function Home() {
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [tags, setTags] = useState<ExifTags>({});
+  const [metadataFields, setMetadataFields] = useState<MetadataField[]>([]);
   const [original, setOriginal] = useState<EditableData>(EMPTY_DATA);
   const [form, setForm] = useState<EditableData>(EMPTY_DATA);
   const [gpsMode, setGpsMode] = useState<GpsMode>("keep");
+  const [cleanupPreset, setCleanupPreset] = useState<CleanupPreset>("none");
   const [mapLoaded, setMapLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -544,6 +642,7 @@ export default function Home() {
     setVerified(false);
     setPixelVerified(false);
     setReviewOpen(false);
+    setMetadataFields([]);
 
     if (!["image/jpeg", "image/jpg"].includes(selected.type) && !/\.jpe?g$/i.test(selected.name)) {
       setError(t.jpegOnly);
@@ -556,12 +655,23 @@ export default function Home() {
 
     setBusy(true);
     try {
-      const { default: ExifReader } = await import("exifreader");
-      const loaded = (await ExifReader.load(selected, {
-        includeUnknown: true,
-      })) as ExifTags;
+      const [{ default: ExifReader }, { readMetadataInWorker }] = await Promise.all([
+        import("exifreader"),
+        import("./exif-write-client"),
+      ]);
+      const [loaded, exifToolResult] = await Promise.all([
+        ExifReader.load(selected, {
+          includeUnknown: true,
+        }) as Promise<ExifTags>,
+        readMetadataInWorker(selected, (phase) => {
+          setStatus(phase === "loading" ? t.preparingWriter : t.reading);
+        }),
+      ]);
       const nextUrl = URL.createObjectURL(selected);
       const dimensions = await getImageDimensions(nextUrl);
+      const nextMetadataFields = exifToolResult.success
+        ? normalizeExifToolFields(exifToolResult.data)
+        : [];
 
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(nextUrl);
@@ -572,23 +682,36 @@ export default function Home() {
         ...dimensions,
       });
       setTags(loaded);
+      setMetadataFields(nextMetadataFields);
 
       const latitude = gpsCoordinate(loaded, "Latitude");
       const longitude = gpsCoordinate(loaded, "Longitude");
       const nextData: EditableData = {
-        make: firstTag(loaded, ["Make"]),
-        model: firstTag(loaded, ["Model"]),
-        lensModel: firstTag(loaded, ["LensModel", "Lens"]),
+        make: semanticValueFromFields(nextMetadataFields, "make") || firstTag(loaded, ["Make"]),
+        model: semanticValueFromFields(nextMetadataFields, "model") || firstTag(loaded, ["Model"]),
+        lensModel:
+          semanticValueFromFields(nextMetadataFields, "lensModel") ||
+          firstTag(loaded, ["LensModel", "Lens"]),
         aperture: numericTag(loaded, ["FNumber", "ApertureValue"]),
         shutterSpeed: numericTag(loaded, ["ExposureTime"], true),
         iso: numericTag(loaded, ["ISOSpeedRatings", "PhotographicSensitivity"]),
         focalLength: numericTag(loaded, ["FocalLength"]),
         dateTime: exifDateToInput(
-          firstTag(loaded, ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]),
+          semanticValueFromFields(nextMetadataFields, "dateTime") ||
+            firstTag(loaded, ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]),
         ),
-        artist: firstTag(loaded, ["Artist", "Author", "XPAuthor"]),
-        copyright: firstTag(loaded, ["Copyright"]),
-        description: firstTag(loaded, ["ImageDescription", "Description", "Caption-Abstract"]),
+        title: semanticValueFromFields(nextMetadataFields, "title"),
+        artist:
+          semanticValueFromFields(nextMetadataFields, "artist") ||
+          firstTag(loaded, ["Artist", "Author", "XPAuthor"]),
+        copyright:
+          semanticValueFromFields(nextMetadataFields, "copyright") || firstTag(loaded, ["Copyright"]),
+        keywords: semanticValueFromFields(nextMetadataFields, "keywords"),
+        city: semanticValueFromFields(nextMetadataFields, "city"),
+        country: semanticValueFromFields(nextMetadataFields, "country"),
+        description:
+          semanticValueFromFields(nextMetadataFields, "description") ||
+          firstTag(loaded, ["ImageDescription", "Description", "Caption-Abstract"]),
         latitude,
         longitude,
         altitude: parseCoordinate(firstTag(loaded, ["GPSAltitude"])),
@@ -597,10 +720,12 @@ export default function Home() {
       setOriginal(nextData);
       setForm(nextData);
       setGpsMode(latitude && longitude ? "keep" : "edit");
+      setCleanupPreset("none");
       setMapLoaded(false);
       setC2paDetected(
         Object.keys(loaded).some((key) => /c2pa|jumbf|content.?credential/i.test(key)),
       );
+      setStatus("");
     } catch (cause) {
       console.error(cause);
       setError(t.parseFailed);
@@ -645,6 +770,7 @@ export default function Home() {
   const reset = () => {
     setForm(original);
     setGpsMode(original.latitude && original.longitude ? "keep" : "edit");
+    setCleanupPreset("none");
     setVerified(false);
     setPixelVerified(false);
     setStatus("");
@@ -678,8 +804,12 @@ export default function Home() {
     push("ISO", original.iso, form.iso);
     push(t.focalLength, original.focalLength, form.focalLength);
     push(t.dateTaken, original.dateTime, form.dateTime);
+    push(t.title, original.title, form.title);
     push(t.artist, original.artist, form.artist);
     push(t.copyright, original.copyright, form.copyright);
+    push(t.keywords, original.keywords, form.keywords);
+    push(t.city, original.city, form.city);
+    push(t.country, original.country, form.country);
     push(t.description, original.description, form.description);
 
     if (gpsMode === "remove" && (original.latitude || original.longitude || original.altitude)) {
@@ -703,8 +833,48 @@ export default function Home() {
       push(t.altitude, original.altitude, form.altitude);
       push(t.direction, original.direction, form.direction);
     }
+    if (cleanupPreset !== "none") {
+      const cleanupLabels: Record<CleanupPreset, string> = {
+        none: t.cleanupNone,
+        privacy: t.cleanupPrivacy,
+        social: t.cleanupSocial,
+        appearance: t.cleanupAppearance,
+        full: t.cleanupFull,
+      };
+      items.push({
+        label: t.cleanupDiff,
+        before: t.cleanupNone,
+        after: cleanupLabels[cleanupPreset],
+        kind: cleanupPreset === "full" ? "danger" : undefined,
+      });
+    }
     return items;
-  }, [form, gpsMode, original, t]);
+  }, [cleanupPreset, form, gpsMode, original, t]);
+
+  const conflicts = useMemo(() => {
+    const semanticLabels: Record<SemanticFieldKey, string> = {
+      artist: t.artist,
+      copyright: t.copyright,
+      title: t.title,
+      description: t.description,
+      keywords: t.keywords,
+      dateTime: t.dateTaken,
+      make: t.make,
+      model: t.model,
+      lensModel: t.lensModel,
+      city: t.city,
+      country: t.country,
+    };
+    return semanticConflicts(metadataFields, semanticLabels);
+  }, [metadataFields, t]);
+
+  const groupCounts = useMemo(() => {
+    const counts = new globalThis.Map<string, number>();
+    for (const field of metadataFields) {
+      counts.set(field.group, (counts.get(field.group) ?? 0) + 1);
+    }
+    return [...counts.entries()];
+  }, [metadataFields]);
 
   const openReview = () => {
     setError("");
@@ -753,10 +923,16 @@ export default function Home() {
     setPixelVerified(false);
 
     try {
-      const writeTags: Record<string, string | number> = {};
-      if (form.make !== original.make) writeTags.Make = form.make;
-      if (form.model !== original.model) writeTags.Model = form.model;
-      if (form.lensModel !== original.lensModel) writeTags.LensModel = form.lensModel;
+      const writeTags: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
+      if (form.make !== original.make) {
+        Object.assign(writeTags, semanticWriteTags("make", form.make));
+      }
+      if (form.model !== original.model) {
+        Object.assign(writeTags, semanticWriteTags("model", form.model));
+      }
+      if (form.lensModel !== original.lensModel) {
+        Object.assign(writeTags, semanticWriteTags("lensModel", form.lensModel));
+      }
       if (form.aperture !== original.aperture) {
         writeTags.FNumber = form.aperture;
         if (!form.aperture) writeTags.ApertureValue = "";
@@ -765,11 +941,29 @@ export default function Home() {
       if (form.iso !== original.iso) writeTags.ISO = form.iso;
       if (form.focalLength !== original.focalLength) writeTags.FocalLength = form.focalLength;
       if (form.dateTime !== original.dateTime) {
-        writeTags.DateTimeOriginal = inputDateToExif(form.dateTime);
+        Object.assign(writeTags, semanticWriteTags("dateTime", inputDateToExif(form.dateTime)));
       }
-      if (form.artist !== original.artist) writeTags.Artist = form.artist;
-      if (form.copyright !== original.copyright) writeTags.Copyright = form.copyright;
-      if (form.description !== original.description) writeTags.ImageDescription = form.description;
+      if (form.title !== original.title) {
+        Object.assign(writeTags, semanticWriteTags("title", form.title));
+      }
+      if (form.artist !== original.artist) {
+        Object.assign(writeTags, semanticWriteTags("artist", form.artist));
+      }
+      if (form.copyright !== original.copyright) {
+        Object.assign(writeTags, semanticWriteTags("copyright", form.copyright));
+      }
+      if (form.keywords !== original.keywords) {
+        Object.assign(writeTags, semanticWriteTags("keywords", form.keywords));
+      }
+      if (form.city !== original.city) {
+        Object.assign(writeTags, semanticWriteTags("city", form.city));
+      }
+      if (form.country !== original.country) {
+        Object.assign(writeTags, semanticWriteTags("country", form.country));
+      }
+      if (form.description !== original.description) {
+        Object.assign(writeTags, semanticWriteTags("description", form.description));
+      }
 
       if (gpsMode === "remove") {
         writeTags["GPS:All"] = "";
@@ -788,8 +982,11 @@ export default function Home() {
           if (form.direction) writeTags.GPSImgDirectionRef = "T";
         }
       }
+      for (const tag of CLEANUP_PRESETS[cleanupPreset].tags) {
+        writeTags[tag] = "";
+      }
 
-      const [{ writeMetadataInWorker }, { default: ExifReader }] = await Promise.all([
+      const [{ readMetadataInWorker, writeMetadataInWorker }, { default: ExifReader }] = await Promise.all([
         import("./exif-write-client"),
         import("exifreader"),
       ]);
@@ -798,7 +995,7 @@ export default function Home() {
       // but the WASM wrapper treats any stderr output as a failed operation.
       // Suppress only ExifTool's minor warnings; real warnings and errors still
       // flow through the wrapper and block export.
-      const result = await writeMetadataInWorker(file, writeTags, (phase) => {
+      const result = await writeMetadataInWorker(file, writeTags, [], (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
       });
       if (!result.success) {
@@ -820,6 +1017,10 @@ export default function Home() {
       const verifiedTags = (await ExifReader.load(outputFile, {
         includeUnknown: true,
       })) as ExifTags;
+      const verifiedMetadataResult = await readMetadataInWorker(outputFile);
+      const verifiedMetadataFields = verifiedMetadataResult.success
+        ? normalizeExifToolFields(verifiedMetadataResult.data)
+        : [];
 
       const verifiedLat = gpsCoordinate(verifiedTags, "Latitude");
       const verifiedLng = gpsCoordinate(verifiedTags, "Longitude");
@@ -830,7 +1031,32 @@ export default function Home() {
             ? Math.abs(Number(verifiedLat) - Number(form.latitude)) < 0.000001 &&
               Math.abs(Number(verifiedLng) - Number(form.longitude)) < 0.000001
             : true;
+      const semanticFieldsOk =
+        (form.make === original.make ||
+          semanticValueFromFields(verifiedMetadataFields, "make") === form.make) &&
+        (form.model === original.model ||
+          semanticValueFromFields(verifiedMetadataFields, "model") === form.model) &&
+        (form.lensModel === original.lensModel ||
+          semanticValueFromFields(verifiedMetadataFields, "lensModel") === form.lensModel) &&
+        (form.dateTime === original.dateTime ||
+          exifDateToInput(semanticValueFromFields(verifiedMetadataFields, "dateTime")) ===
+            form.dateTime) &&
+        (form.title === original.title ||
+          semanticValueFromFields(verifiedMetadataFields, "title") === form.title) &&
+        (form.artist === original.artist ||
+          semanticValueFromFields(verifiedMetadataFields, "artist") === form.artist) &&
+        (form.copyright === original.copyright ||
+          semanticValueFromFields(verifiedMetadataFields, "copyright") === form.copyright) &&
+        (form.keywords === original.keywords ||
+          semanticValueFromFields(verifiedMetadataFields, "keywords") === form.keywords) &&
+        (form.city === original.city ||
+          semanticValueFromFields(verifiedMetadataFields, "city") === form.city) &&
+        (form.country === original.country ||
+          semanticValueFromFields(verifiedMetadataFields, "country") === form.country) &&
+        (form.description === original.description ||
+          semanticValueFromFields(verifiedMetadataFields, "description") === form.description);
       const editableFieldsOk =
+        semanticFieldsOk &&
         (form.make === original.make || firstTag(verifiedTags, ["Make"]) === form.make) &&
         (form.model === original.model || firstTag(verifiedTags, ["Model"]) === form.model) &&
         (form.lensModel === original.lensModel ||
@@ -908,6 +1134,12 @@ export default function Home() {
   };
 
   const hasFile = Boolean(file && fileInfo);
+  const assuranceItems = [
+    { icon: ShieldCheck, title: t.protectedOriginal, copy: t.protectedOriginalCopy },
+    { icon: FileImage, title: t.losslessCheck, copy: t.losslessCheckCopy },
+    { icon: LockKeyhole, title: t.browserOnlyCheck, copy: t.browserOnlyCheckCopy },
+  ];
+
   return (
     <main>
       <header className="site-header">
@@ -947,7 +1179,10 @@ export default function Home() {
       </header>
 
       <section className="hero" id="top">
-        <div className="eyebrow"><span /> PRIVATE · LOCAL · LOSSLESS</div>
+        <div className="hero-badges">
+          <div className="eyebrow"><span /> PRIVATE · LOCAL · LOSSLESS</div>
+          <strong>{t.versionBadge}</strong>
+        </div>
         <h1>{t.heroTitle}</h1>
         <p>
           {t.heroCopy1}
@@ -1199,7 +1434,7 @@ export default function Home() {
                     <span className="section-icon"><Clock3 size={18} /></span>
                     <div>
                       <h2>{t.timeAndText}</h2>
-                      <p>{t.commonFields}</p>
+                      <p>{t.syncedFields}</p>
                     </div>
                   </div>
                   <div className="field-stack">
@@ -1211,6 +1446,10 @@ export default function Home() {
                         onChange={(event) => assign("dateTime", event.target.value)}
                       />
                     </label>
+                    <label>
+                      <span>{t.title}</span>
+                      <input value={form.title} onChange={(event) => assign("title", event.target.value)} placeholder={t.titlePlaceholder} />
+                    </label>
                     <div className="two-fields">
                       <label>
                         <span>{t.artist}</span>
@@ -1219,6 +1458,20 @@ export default function Home() {
                       <label>
                         <span>{t.copyright}</span>
                         <input value={form.copyright} onChange={(event) => assign("copyright", event.target.value)} placeholder={t.copyrightPlaceholder} />
+                      </label>
+                    </div>
+                    <label>
+                      <span>{t.keywords}</span>
+                      <input value={form.keywords} onChange={(event) => assign("keywords", event.target.value)} placeholder={t.keywordsPlaceholder} />
+                    </label>
+                    <div className="two-fields">
+                      <label>
+                        <span>{t.city}</span>
+                        <input value={form.city} onChange={(event) => assign("city", event.target.value)} placeholder={t.cityPlaceholder} />
+                      </label>
+                      <label>
+                        <span>{t.country}</span>
+                        <input value={form.country} onChange={(event) => assign("country", event.target.value)} placeholder={t.countryPlaceholder} />
                       </label>
                     </div>
                     <label>
@@ -1234,8 +1487,145 @@ export default function Home() {
                     </label>
                   </div>
                 </section>
+
+                <section className="form-section">
+                  <div className="section-heading">
+                    <span className="section-icon"><AlertTriangle size={18} /></span>
+                    <div>
+                      <h2>{t.conflictCheck}</h2>
+                      <p>{t.conflictHint}</p>
+                    </div>
+                  </div>
+                  {conflicts.length ? (
+                    <div className="conflict-list">
+                      {conflicts.map((conflict) => (
+                        <article className="conflict-card" key={conflict.key}>
+                          <strong>{conflict.label}</strong>
+                          {conflict.values.map((item) => (
+                            <button
+                              type="button"
+                              key={`${conflict.key}-${item.tag}-${item.value}`}
+                              onClick={() => assign(conflict.key, item.value)}
+                            >
+                              <span>{item.tag}</span>
+                              <b>{item.value}</b>
+                              <small>{t.useThisValue}</small>
+                            </button>
+                          ))}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-diff conflict-empty">
+                      <Check size={16} />
+                      <span>{t.noConflicts}</span>
+                    </div>
+                  )}
+                </section>
+
+                <section className="form-section">
+                  <div className="section-heading">
+                    <span className="section-icon"><ShieldCheck size={18} /></span>
+                    <div>
+                      <h2>{t.cleanupTitle}</h2>
+                      <p>{t.cleanupHint}</p>
+                    </div>
+                  </div>
+                  <div className="cleanup-grid" role="radiogroup" aria-label={t.cleanupTitle}>
+                    {([
+                      ["none", t.cleanupNone, t.noChanges],
+                      ["privacy", t.cleanupPrivacy, t.cleanupPrivacyCopy],
+                      ["social", t.cleanupSocial, t.cleanupSocialCopy],
+                      ["appearance", t.cleanupAppearance, t.cleanupAppearanceCopy],
+                      ["full", t.cleanupFull, t.cleanupFullCopy],
+                    ] as const).map(([preset, label, copy]) => (
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={cleanupPreset === preset}
+                        className={cleanupPreset === preset ? "active" : ""}
+                        key={preset}
+                        onClick={() => {
+                          setCleanupPreset(preset);
+                          setVerified(false);
+                        }}
+                      >
+                        <strong>{label}</strong>
+                        <span>{copy}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="form-section">
+                  <div className="section-heading">
+                    <span className="section-icon"><ListChecks size={18} /></span>
+                    <div>
+                      <h2>{t.allTagsBrowser}</h2>
+                      <p>{t.allTagsHint}</p>
+                    </div>
+                  </div>
+                  <div className="group-pills" aria-label={t.detectedGroups}>
+                    {groupCounts.map(([group, count]) => (
+                      <span key={group}>{group}<b>{count}</b></span>
+                    ))}
+                  </div>
+                  <div className="metadata-table">
+                    {metadataFields.slice(0, 160).map((field) => (
+                      <div className={`metadata-row risk-${field.risk}`} key={field.key}>
+                        <span>{field.group}</span>
+                        <strong>{field.tag}</strong>
+                        <b>{field.value || t.unset}</b>
+                        <small>{field.writable ? t.writableTag : t.readOnlyTag}</small>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </div>
             </div>
+
+            <section className="change-review-panel" aria-label={t.changePreview}>
+              <div className="change-review-heading">
+                <span className="section-icon"><ListChecks size={18} /></span>
+                <div>
+                  <h2>{t.changePreview}</h2>
+                  <p>{t.changePreviewHint}</p>
+                </div>
+              </div>
+              <div className="change-review-body">
+                <div className="inline-diff-list">
+                  {diffs.length ? (
+                    diffs.slice(0, 5).map((diff) => (
+                      <div
+                        className={`inline-diff ${diff.kind === "danger" ? "danger-diff" : ""}`}
+                        key={diff.label}
+                      >
+                        <strong>{diff.label}</strong>
+                        <span>{diff.before}</span>
+                        <ArrowRight size={14} />
+                        <b>{diff.after}</b>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-diff">
+                      <Sparkles size={16} />
+                      <span>{t.noChangePreview}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="assurance-list">
+                  {assuranceItems.map(({ icon: Icon, title, copy }) => (
+                    <div className="assurance-item" key={title}>
+                      <Icon size={16} />
+                      <span>
+                        <strong>{title}</strong>
+                        <small>{copy}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
 
             <div className="editor-footer">
               <button className="secondary-button" onClick={reset} disabled={!diffs.length || busy}>
