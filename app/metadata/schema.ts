@@ -80,19 +80,6 @@ export const CLEANUP_PRESETS = {
       "PreviewImage",
     ],
   },
-  social: {
-    tags: [
-      "GPS:All",
-      "MakerNotes:All",
-      "SerialNumber",
-      "InternalSerialNumber",
-      "CameraSerialNumber",
-      "LensSerialNumber",
-      "BodySerialNumber",
-      "ThumbnailImage",
-      "PreviewImage",
-    ],
-  },
   appearance: {
     tags: ["EXIF:All", "GPS:All", "XMP:All", "IPTC:All", "MakerNotes:All", "Photoshop:All"],
   },
@@ -116,7 +103,15 @@ export const ADVANCED_DELETE_TAGS = [
   "JUMBF:All",
 ] as const;
 
+export const QUICK_GROUP_DELETE_TAGS = [
+  "EXIF:All",
+  "XMP:All",
+  "IPTC:All",
+  "Photoshop:All",
+] as const;
+
 export type AdvancedDeleteTag = (typeof ADVANCED_DELETE_TAGS)[number];
+export type QuickGroupDeleteTag = (typeof QUICK_GROUP_DELETE_TAGS)[number];
 
 export const metadataGroupFromKey = (key: string): MetadataGroup => {
   const group = key.split(":")[0] ?? "";

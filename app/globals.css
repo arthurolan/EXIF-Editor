@@ -646,53 +646,6 @@ button:disabled {
   font-size: 11px;
 }
 
-.details-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  margin-top: 10px;
-  padding: 10px;
-  border: 0;
-  border-top: 1px solid rgba(32, 33, 30, 0.08);
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-  font-size: 11px;
-}
-
-.rotate {
-  transform: rotate(180deg);
-}
-
-.tag-list {
-  max-height: 280px;
-  overflow: auto;
-  padding-right: 14px;
-  border-top: 1px solid rgba(32, 33, 30, 0.08);
-  scrollbar-gutter: stable;
-}
-
-.tag-list div {
-  display: grid;
-  grid-template-columns: minmax(85px, 0.7fr) 1.3fr;
-  gap: 8px;
-  padding: 7px 0;
-  border-bottom: 1px solid rgba(32, 33, 30, 0.06);
-  font-size: 10px;
-}
-
-.tag-list span {
-  color: var(--muted);
-  word-break: break-all;
-}
-
-.tag-list b {
-  text-align: right;
-  word-break: break-word;
-}
-
 .form-column {
   min-width: 0;
   padding: 8px 34px 34px;
@@ -1034,6 +987,48 @@ textarea:focus {
   line-height: 1.45;
 }
 
+.group-delete-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.group-delete-list button {
+  min-height: 54px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  text-align: left;
+  background: rgba(255, 253, 248, 0.7);
+  cursor: pointer;
+}
+
+.group-delete-list button:hover,
+.group-delete-list button.active {
+  border-color: rgba(182, 70, 50, 0.4);
+}
+
+.group-delete-list button.active {
+  color: var(--danger);
+  background: #fff2ed;
+  box-shadow: inset 0 0 0 2px rgba(182, 70, 50, 0.08);
+}
+
+.group-delete-list span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.group-delete-list small {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
 .group-pills {
   display: flex;
   flex-wrap: wrap;
@@ -1072,7 +1067,7 @@ textarea:focus {
 
 .metadata-row {
   display: grid;
-  grid-template-columns: 78px minmax(110px, 0.8fr) minmax(0, 1.2fr) 58px;
+  grid-template-columns: 78px minmax(110px, 0.8fr) minmax(0, 1.2fr);
   align-items: center;
   gap: 10px;
   min-height: 40px;
@@ -1100,17 +1095,6 @@ textarea:focus {
   font-weight: 500;
 }
 
-.metadata-row small {
-  color: var(--muted);
-  font-size: 9px;
-  text-align: right;
-}
-
-.metadata-row.risk-safe small {
-  color: var(--green);
-}
-
-.metadata-row.risk-danger small,
 .metadata-row.risk-danger span {
   color: var(--danger);
 }
@@ -1160,12 +1144,6 @@ textarea:focus {
   margin: 0;
   color: var(--muted);
   font-size: 11px;
-}
-
-.change-review-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
-  gap: 18px;
 }
 
 .inline-diff-list {
@@ -1224,41 +1202,28 @@ textarea:focus {
   color: var(--accent);
 }
 
-.assurance-list {
-  display: grid;
-  gap: 8px;
-}
 
-.assurance-item {
-  min-height: 52px;
+.trust-strip {
+  width: min(1180px, calc(100% - 48px));
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid rgba(47, 93, 79, 0.14);
-  border-radius: 8px;
-  background: rgba(255, 253, 247, 0.62);
+  margin: 36px auto;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
 }
 
-.assurance-item svg {
+.trust-strip svg {
   flex: 0 0 auto;
   color: var(--ink-green);
 }
 
-.assurance-item span {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.assurance-item strong {
-  font-size: 12px;
-}
-
-.assurance-item small {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.4;
+.trust-strip p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .secondary-button {
@@ -1829,7 +1794,8 @@ footer p {
 
   .conflict-card button,
   .metadata-row,
-  .cleanup-grid {
+  .cleanup-grid,
+  .group-delete-list {
     grid-template-columns: 1fr;
     gap: 4px;
   }

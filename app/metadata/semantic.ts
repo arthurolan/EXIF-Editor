@@ -1,4 +1,4 @@
-import { MetadataField, firstMetadataValue } from "./schema";
+import { MetadataField } from "./schema";
 
 export type SemanticFieldKey =
   | "artist"
@@ -79,12 +79,26 @@ export const SEMANTIC_FIELDS: SemanticFieldDefinition[] = [
 const uniqueValues = (values: string[]): string[] =>
   [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 
+const matchesTag = (field: MetadataField, key: string): boolean => {
+  if (field.key === key) return true;
+
+  const separator = key.indexOf(":");
+  if (separator < 0) return false;
+  const group = key.slice(0, separator);
+  const tag = key.slice(separator + 1);
+  return field.group === (group.startsWith("XMP") ? "XMP" : group) && field.tag === tag;
+};
+
+const valueForTag = (fields: MetadataField[], key: string): string =>
+  fields.find((field) => matchesTag(field, key))?.value.trim() ?? "";
+
 export const semanticValueFromFields = (
   fields: MetadataField[],
   key: SemanticFieldKey,
 ): string => {
   const definition = SEMANTIC_FIELDS.find((field) => field.key === key);
-  return definition ? firstMetadataValue(fields, definition.tags) : "";
+  if (!definition) return "";
+  return definition.tags.map((tag) => valueForTag(fields, tag)).find(Boolean) ?? "";
 };
 
 export const semanticWriteTags = (
@@ -110,7 +124,7 @@ export const semanticConflicts = (
     const values = definition.tags
       .map((tag) => ({
         tag,
-        value: fields.find((field) => field.key === tag)?.value.trim() ?? "",
+        value: valueForTag(fields, tag),
       }))
       .filter((item) => item.value);
     const distinct = uniqueValues(values.map((item) => item.value));

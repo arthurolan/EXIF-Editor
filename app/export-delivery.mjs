@@ -5,11 +5,8 @@ export const outputNameFor = (fileName) => {
 
 export const isMobileDevice = ({
   userAgent = "",
-  platform = "",
-  maxTouchPoints = 0,
 } = {}) =>
-  /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent) ||
-  (platform === "MacIntel" && maxTouchPoints > 1);
+  /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
 
 export const canShareFileOnMobile = (navigatorLike, file) => {
   if (

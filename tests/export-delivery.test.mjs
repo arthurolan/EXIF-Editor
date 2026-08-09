@@ -12,10 +12,10 @@ test("adds exactly one edited suffix to JPEG output names", () => {
   assert.equal(outputNameFor("IMG_4846_edited.jpeg"), "IMG_4846_edited.jpg");
 });
 
-test("detects iPhone, Android, and touch-capable iPad desktop mode", () => {
+test("detects mobile browsers without treating a desktop Mac as mobile", () => {
   assert.equal(isMobileDevice({ userAgent: "Mozilla/5.0 (iPhone) Mobile" }), true);
   assert.equal(isMobileDevice({ userAgent: "Mozilla/5.0 (Linux; Android 16)" }), true);
-  assert.equal(isMobileDevice({ platform: "MacIntel", maxTouchPoints: 5 }), true);
+  assert.equal(isMobileDevice({ platform: "MacIntel", maxTouchPoints: 5 }), false);
   assert.equal(isMobileDevice({ userAgent: "Mozilla/5.0 (Macintosh)", platform: "MacIntel" }), false);
 });
 

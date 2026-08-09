@@ -18,7 +18,9 @@ export type ExifToolReadResult =
   | { success: true; data: ExifToolJsonRecord }
   | { success: false; error: string };
 
-export const EXIF_WRITE_TIMEOUT_MS = 120_000;
+// Large camera JPEGs can require several copies in the browser's WASM memory.
+// Give local processing time to finish instead of failing at an arbitrary two-minute edge.
+export const EXIF_WRITE_TIMEOUT_MS = 300_000;
 
 const createExifToolWorker = () =>
   new Worker(new URL("./exif-write.worker.ts", import.meta.url), {

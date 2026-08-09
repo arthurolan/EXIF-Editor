@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Camera,
   Check,
-  ChevronDown,
   CircleHelp,
   Clock3,
   Download,
@@ -17,7 +16,6 @@ import {
   Map,
   MapPin,
   Navigation,
-  PenLine,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
@@ -28,8 +26,15 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
-import { canShareFileOnMobile, outputNameFor } from "./export-delivery.mjs";
-import { CLEANUP_PRESETS, CleanupPreset, MetadataField, normalizeExifToolFields } from "./metadata/schema";
+import { outputNameFor } from "./export-delivery.mjs";
+import {
+  CLEANUP_PRESETS,
+  CleanupPreset,
+  MetadataField,
+  normalizeExifToolFields,
+  QUICK_GROUP_DELETE_TAGS,
+  QuickGroupDeleteTag,
+} from "./metadata/schema";
 import {
   SemanticFieldKey,
   semanticConflicts,
@@ -45,25 +50,25 @@ type Language = "zh" | "en";
 
 const COPY = {
   zh: {
-    home: "影刻·EXIF 首页",
+    home: "影刻·照片元数据首页",
     localHeader: "图片只在你的浏览器中处理",
     privacyLink: "关于隐私",
     versionBadge: "V2.0 工作流",
-    heroTitle: "编辑照片的 EXIF 信息",
-    heroCopy1: "读取并编辑 JPEG 的 EXIF 信息，在地图上点选位置。",
+    heroTitle: "照片元数据工作台",
+    heroCopy1: "读取、编辑和清理 JPEG 的 EXIF、XMP 与 IPTC 信息。",
     heroCopy2: "不上传原片，不改变画质，只导出新的副本。",
     flowLabel: "处理流程",
     chooseStep: "选择照片",
     editStep: "编辑信息",
     verifyStep: "核验导出",
-    workspaceLabel: "EXIF 编辑工作区",
+    workspaceLabel: "照片元数据工作区",
     chooseAria: "选择 JPEG 照片",
     startHere: "从这里开始",
     dropTitle: "把一张照片拖到这里",
     dropCopy: "或从设备中选择一张 JPEG 图片",
     reading: "正在读取…",
     choosePhoto: "选择照片",
-    maxSize: "单张最大 100 MB",
+    maxSize: "单张最大 500 MB",
     neverUpload: "不会上传",
     changePhoto: "更换照片",
     c2paWarning: "检测到 Content Credentials / C2PA 信息；修改元数据可能影响其验证结果。",
@@ -82,7 +87,6 @@ const COPY = {
     isoPlaceholder: "例如 400",
     focalLengthPlaceholder: "例如 35",
     invalidCameraSettings: "请检查拍摄参数：光圈、快门速度和焦距须为正数，ISO 须为正整数；不需要的字段可以留空。",
-    showTags: "查看全部已读取标签",
     location: "位置",
     wgsHint: "写入 EXIF 的坐标始终使用 WGS-84",
     gpsModes: "GPS 处理方式",
@@ -130,46 +134,33 @@ const COPY = {
     allTagsBrowser: "全部标签浏览器",
     allTagsHint: "按元数据组查看，MakerNotes 默认只读。",
     detectedGroups: "检测到的元数据组",
-    writableTag: "可写",
-    readOnlyTag: "只读",
     cleanupTitle: "隐私清理",
     cleanupHint: "预设会作为删除指令写入副本，原片仍不会被覆盖。",
     cleanupNone: "不清理",
     cleanupPrivacy: "隐私清理",
-    cleanupSocial: "社交发布",
     cleanupAppearance: "保留视觉外观",
     cleanupFull: "彻底清空",
     cleanupPrivacyCopy: "删除 GPS、序列号、缩略图和处理软件痕迹",
-    cleanupSocialCopy: "保留作者/版权/描述，删除 GPS、MakerNotes 和序列号",
     cleanupAppearanceCopy: "删除大部分元数据，但保留 ICC 色彩配置",
     cleanupFullCopy: "尽可能删除全部元数据，可能影响颜色、方向和认证",
     cleanupDiff: "清理预设",
+    groupDeleteTitle: "按组删除",
+    groupDeleteHint: "可单独移除指定元数据组，并可与清理预设组合使用。",
+    groupDeleteEXIF: "删除 EXIF",
+    groupDeleteXMP: "删除 XMP",
+    groupDeleteIPTC: "删除 IPTC",
+    groupDeletePhotoshop: "删除 Photoshop 数据",
+    groupDeleteDiff: "单独删除",
     undoAll: "撤销全部修改",
     changesPending: "项待写入",
     noChanges: "尚无修改",
     changePreview: "修改摘要",
     changePreviewHint: "选择导出前，可先核对本次会写入副本的字段。",
     noChangePreview: "改动会实时出现在这里。",
-    protectedOriginal: "原片保护",
-    protectedOriginalCopy: "只生成新副本",
-    losslessCheck: "画质检查",
-    losslessCheckCopy: "导出前复核像素指纹",
-    browserOnlyCheck: "本地处理",
-    browserOnlyCheckCopy: "照片不上传服务器",
     reviewExport: "核对并导出副本",
     verificationNote: "GPS 已复核 · 压缩图像数据未改变",
-    privacyEyebrow: "你的照片，属于你",
-    privacyTitle: "我们不会看你的照片",
-    privacyCopy: "读取、修改和验证全部在当前浏览器标签页内完成。只有你主动打开地图时，地图图块才会联网加载。",
-    localTitle: "本地处理",
-    localCopy: "照片不会发送到服务器，也不会被保存。",
-    losslessTitle: "无损写入",
-    losslessCopy: "只改写元数据段，不使用 Canvas 重压缩图片。",
-    copyTitle: "导出副本",
-    copyCopy: "默认生成带有 _edited 后缀的新文件，不覆盖原片。",
-    verifyTitle: "双重验证",
-    verifyCopy: "导出前重新读取 EXIF，并比对 JPEG 压缩数据指纹。",
-    footerCopy: "照片只在浏览器本地处理，默认导出新的副本。",
+    privacyCopy: "仅在当前浏览器本地处理，不上传原片；写入后会复核字段与 JPEG 压缩图像数据，并导出新副本。",
+    footerCopy: "本地处理 · 无损写入 · 导出副本",
     close: "关闭",
     reviewKicker: "导出前确认",
     reviewTitle: "这些信息将被写入副本",
@@ -203,7 +194,7 @@ const COPY = {
     nothingToWrite: "还没有需要写入的修改。",
     writingMetadata: "正在本地写入元数据…",
     preparingWriter: "正在准备本地写入工具…",
-    writeTimedOut: "本地写入超过两分钟，已安全终止。请关闭其他占用内存的页面后重试。",
+    writeTimedOut: "本地写入超过五分钟，已安全终止。请关闭其他占用内存的页面后重试。",
     writerResourceFailed: "本地写入组件载入失败。请刷新页面后重试；若仍失败，请确认网站资源已完整更新。",
     writeFailed: "ExifTool 写入失败",
     verifyingFile: "正在重新读取并核验导出文件…",
@@ -214,25 +205,25 @@ const COPY = {
     exportFailed: "导出失败，请换一张 JPEG 后重试。",
   },
   en: {
-    home: "Yingke · EXIF home",
+    home: "Yingke photo metadata home",
     localHeader: "Your image stays in your browser",
     privacyLink: "Privacy",
     versionBadge: "V2.0 workflow",
-    heroTitle: "Edit Photo EXIF Metadata",
-    heroCopy1: "Read and edit JPEG EXIF data, or choose a location on the map.",
+    heroTitle: "Photo Metadata Workspace",
+    heroCopy1: "Read, edit, and clean JPEG EXIF, XMP, and IPTC metadata.",
     heroCopy2: "Your original never leaves the browser or gets recompressed.",
     flowLabel: "Workflow",
     chooseStep: "Choose photo",
     editStep: "Edit metadata",
     verifyStep: "Verify & export",
-    workspaceLabel: "EXIF editing workspace",
+    workspaceLabel: "Photo metadata workspace",
     chooseAria: "Choose a JPEG photo",
     startHere: "START HERE",
     dropTitle: "Drop a photo here",
     dropCopy: "or choose a JPEG image from your device",
     reading: "Reading…",
     choosePhoto: "Choose photo",
-    maxSize: "Up to 100 MB",
+    maxSize: "Up to 500 MB",
     neverUpload: "Never uploaded",
     changePhoto: "Change photo",
     c2paWarning: "Content Credentials / C2PA data detected. Editing metadata may affect verification.",
@@ -251,7 +242,6 @@ const COPY = {
     isoPlaceholder: "e.g. 400",
     focalLengthPlaceholder: "e.g. 35",
     invalidCameraSettings: "Check the camera settings: aperture, shutter speed, and focal length must be positive; ISO must be a positive integer. Leave unused fields blank.",
-    showTags: "Show all detected tags",
     location: "Location",
     wgsHint: "Coordinates written to EXIF always use WGS-84",
     gpsModes: "GPS editing mode",
@@ -299,46 +289,33 @@ const COPY = {
     allTagsBrowser: "All tags browser",
     allTagsHint: "Browse by metadata group. MakerNotes stay read-only by default.",
     detectedGroups: "Detected metadata groups",
-    writableTag: "Writable",
-    readOnlyTag: "Read-only",
     cleanupTitle: "Privacy cleanup",
     cleanupHint: "Presets are written as deletion instructions to the copy. The original is still untouched.",
     cleanupNone: "No cleanup",
     cleanupPrivacy: "Privacy cleanup",
-    cleanupSocial: "Social publish",
     cleanupAppearance: "Keep visual appearance",
     cleanupFull: "Full metadata wipe",
     cleanupPrivacyCopy: "Removes GPS, serial numbers, thumbnails, and processing software traces",
-    cleanupSocialCopy: "Keeps author/copyright/description; removes GPS, MakerNotes, and serials",
     cleanupAppearanceCopy: "Removes most metadata but keeps the ICC color profile",
     cleanupFullCopy: "Removes as much metadata as possible; may affect color, orientation, and credentials",
     cleanupDiff: "Cleanup preset",
+    groupDeleteTitle: "Remove by group",
+    groupDeleteHint: "Remove individual metadata groups. These can be combined with a cleanup preset.",
+    groupDeleteEXIF: "Remove EXIF",
+    groupDeleteXMP: "Remove XMP",
+    groupDeleteIPTC: "Remove IPTC",
+    groupDeletePhotoshop: "Remove Photoshop data",
+    groupDeleteDiff: "Group removal",
     undoAll: "Undo all changes",
     changesPending: "changes pending",
     noChanges: "No changes yet",
     changePreview: "Change summary",
     changePreviewHint: "Review the fields that will be written to the copy before exporting.",
     noChangePreview: "Edits will appear here in real time.",
-    protectedOriginal: "Original protected",
-    protectedOriginalCopy: "Creates a new copy only",
-    losslessCheck: "Quality check",
-    losslessCheckCopy: "Pixel fingerprint verified before export",
-    browserOnlyCheck: "Local processing",
-    browserOnlyCheckCopy: "Photo is never uploaded",
     reviewExport: "Review & export copy",
     verificationNote: "GPS verified · Compressed image data unchanged",
-    privacyEyebrow: "Your photo belongs to you",
-    privacyTitle: "We won’t look at your photo",
-    privacyCopy: "Reading, editing, and verification all happen in this browser tab. Map tiles connect to the internet only after you open the map.",
-    localTitle: "Local processing",
-    localCopy: "Your photo is never sent to or stored on a server.",
-    losslessTitle: "Lossless editing",
-    losslessCopy: "Only metadata segments change; the image is never recompressed through Canvas.",
-    copyTitle: "Export a copy",
-    copyCopy: "A new file with an _edited suffix is created. Your original is never overwritten.",
-    verifyTitle: "Double verification",
-    verifyCopy: "EXIF is read again before export and the compressed JPEG data fingerprint is compared.",
-    footerCopy: "Photos are processed locally in your browser and exported as new copies.",
+    privacyCopy: "Everything runs locally in this browser. The original is never uploaded; written fields and JPEG compressed image data are checked before a new copy is exported.",
+    footerCopy: "Local processing · Lossless editing · Export a copy",
     close: "Close",
     reviewKicker: "BEFORE EXPORT",
     reviewTitle: "These changes will be written to the copy",
@@ -372,7 +349,7 @@ const COPY = {
     nothingToWrite: "There are no changes to write yet.",
     writingMetadata: "Writing metadata locally…",
     preparingWriter: "Preparing the local metadata writer…",
-    writeTimedOut: "Local writing exceeded two minutes and was safely stopped. Close other memory-heavy tabs and try again.",
+    writeTimedOut: "Local writing exceeded five minutes and was safely stopped. Close other memory-heavy tabs and try again.",
     writerResourceFailed: "The local writer could not load. Refresh the page and try again; if it persists, the site assets may not have updated completely.",
     writeFailed: "ExifTool could not write the metadata",
     verifyingFile: "Reading and verifying the exported file…",
@@ -451,7 +428,7 @@ const EMPTY_DATA: EditableData = {
   direction: "",
 };
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
 const valueOf = (tag?: ExifTag): string => {
   if (!tag) return "";
@@ -515,7 +492,7 @@ const gpsCoordinate = (tags: ExifTags, axis: "Latitude" | "Longitude"): string =
 };
 
 const exifDateToInput = (value: string): string => {
-  const match = value.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2})/);
+  const match = value.match(/^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2})/);
   return match ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}` : "";
 };
 
@@ -548,7 +525,7 @@ const scanPayload = (buffer: ArrayBuffer): Uint8Array => {
       continue;
     }
     const marker = bytes[index + 1];
-    if (marker === 0xda) return bytes.slice(index);
+    if (marker === 0xda) return bytes.subarray(index);
     if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
       index += 2;
       continue;
@@ -560,9 +537,9 @@ const scanPayload = (buffer: ArrayBuffer): Uint8Array => {
   return bytes;
 };
 
-const digest = async (bytes: Uint8Array): Promise<string> => {
-  const safeBytes = new Uint8Array(bytes);
-  const result = await crypto.subtle.digest("SHA-256", safeBytes.buffer);
+const jpegScanDigest = async (file: Blob): Promise<string> => {
+  const payload = scanPayload(await file.arrayBuffer());
+  const result = await crypto.subtle.digest("SHA-256", payload as unknown as BufferSource);
   return Array.from(new Uint8Array(result))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
@@ -575,21 +552,18 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [tags, setTags] = useState<ExifTags>({});
   const [metadataFields, setMetadataFields] = useState<MetadataField[]>([]);
   const [original, setOriginal] = useState<EditableData>(EMPTY_DATA);
   const [form, setForm] = useState<EditableData>(EMPTY_DATA);
   const [gpsMode, setGpsMode] = useState<GpsMode>("keep");
   const [cleanupPreset, setCleanupPreset] = useState<CleanupPreset>("none");
+  const [groupDeletes, setGroupDeletes] = useState<QuickGroupDeleteTag[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [preparedFile, setPreparedFile] = useState<File | null>(null);
-  const [preparedUrl, setPreparedUrl] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [verified, setVerified] = useState(false);
   const [pixelVerified, setPixelVerified] = useState(false);
   const [c2paDetected, setC2paDetected] = useState(false);
@@ -615,12 +589,6 @@ export default function Home() {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
-
-  useEffect(() => {
-    return () => {
-      if (preparedUrl) URL.revokeObjectURL(preparedUrl);
-    };
-  }, [preparedUrl]);
 
   const assign = (key: keyof EditableData, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -659,14 +627,14 @@ export default function Home() {
         import("exifreader"),
         import("./exif-write-client"),
       ]);
-      const [loaded, exifToolResult] = await Promise.all([
-        ExifReader.load(selected, {
-          includeUnknown: true,
-        }) as Promise<ExifTags>,
-        readMetadataInWorker(selected, (phase) => {
-          setStatus(phase === "loading" ? t.preparingWriter : t.reading);
-        }),
-      ]);
+      // Keep the two parsers sequential. On 30–100 MB camera JPEGs this avoids
+      // holding two complete virtual-file copies in memory at the same time.
+      const loaded = (await ExifReader.load(selected, {
+        includeUnknown: true,
+      })) as ExifTags;
+      const exifToolResult = await readMetadataInWorker(selected, (phase) => {
+        setStatus(phase === "loading" ? t.preparingWriter : t.reading);
+      });
       const nextUrl = URL.createObjectURL(selected);
       const dimensions = await getImageDimensions(nextUrl);
       const nextMetadataFields = exifToolResult.success
@@ -681,7 +649,6 @@ export default function Home() {
         size: selected.size,
         ...dimensions,
       });
-      setTags(loaded);
       setMetadataFields(nextMetadataFields);
 
       const latitude = gpsCoordinate(loaded, "Latitude");
@@ -721,6 +688,7 @@ export default function Home() {
       setForm(nextData);
       setGpsMode(latitude && longitude ? "keep" : "edit");
       setCleanupPreset("none");
+      setGroupDeletes([]);
       setMapLoaded(false);
       setC2paDetected(
         Object.keys(loaded).some((key) => /c2pa|jumbf|content.?credential/i.test(key)),
@@ -771,6 +739,7 @@ export default function Home() {
     setForm(original);
     setGpsMode(original.latitude && original.longitude ? "keep" : "edit");
     setCleanupPreset("none");
+    setGroupDeletes([]);
     setVerified(false);
     setPixelVerified(false);
     setStatus("");
@@ -837,7 +806,6 @@ export default function Home() {
       const cleanupLabels: Record<CleanupPreset, string> = {
         none: t.cleanupNone,
         privacy: t.cleanupPrivacy,
-        social: t.cleanupSocial,
         appearance: t.cleanupAppearance,
         full: t.cleanupFull,
       };
@@ -848,8 +816,16 @@ export default function Home() {
         kind: cleanupPreset === "full" ? "danger" : undefined,
       });
     }
+    if (groupDeletes.length) {
+      items.push({
+        label: t.groupDeleteDiff,
+        before: t.unset,
+        after: groupDeletes.join(", "),
+        kind: "danger",
+      });
+    }
     return items;
-  }, [cleanupPreset, form, gpsMode, original, t]);
+  }, [cleanupPreset, form, gpsMode, groupDeletes, original, t]);
 
   const conflicts = useMemo(() => {
     const semanticLabels: Record<SemanticFieldKey, string> = {
@@ -890,28 +866,7 @@ export default function Home() {
       setError(t.nothingToWrite);
       return;
     }
-    setPreparedFile(null);
-    setPreparedUrl("");
     setReviewOpen(true);
-  };
-
-  const sharePreparedFile = async () => {
-    if (!preparedFile) return;
-    setError("");
-    try {
-      await navigator.share({
-        files: [preparedFile],
-        title: preparedFile.name,
-      });
-      setStatus(`${t.exported} ${preparedFile.name}`);
-      setReviewOpen(false);
-      setPreparedFile(null);
-      setPreparedUrl("");
-    } catch (cause) {
-      if (cause instanceof DOMException && cause.name === "AbortError") return;
-      console.error(cause);
-      setError(t.shareFailed);
-    }
   };
 
   const exportFile = async () => {
@@ -921,6 +876,14 @@ export default function Home() {
     setStatus(t.writingMetadata);
     setVerified(false);
     setPixelVerified(false);
+
+    // A full-resolution preview can consume hundreds of MB for a large JPEG.
+    // Release it before ExifTool creates its own in-memory source and output files.
+    const restorePreview = Boolean(previewUrl);
+    if (restorePreview) {
+      setPreviewUrl("");
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
 
     try {
       const writeTags: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
@@ -985,6 +948,16 @@ export default function Home() {
       for (const tag of CLEANUP_PRESETS[cleanupPreset].tags) {
         writeTags[tag] = "";
       }
+      for (const tag of groupDeletes) {
+        writeTags[tag] = "";
+      }
+
+      // Browser text is UTF-8. Explicitly mark IPTC text the same way so old
+      // JPEGs without CodedCharacterSet don't fall back to the unavailable
+      // Latin codec in the WASM build.
+      if (Object.keys(writeTags).some((tag) => tag.startsWith("IPTC:") && writeTags[tag] !== "")) {
+        writeTags["IPTC:CodedCharacterSet"] = "UTF8";
+      }
 
       const [{ readMetadataInWorker, writeMetadataInWorker }, { default: ExifReader }] = await Promise.all([
         import("./exif-write-client"),
@@ -995,7 +968,7 @@ export default function Home() {
       // but the WASM wrapper treats any stderr output as a failed operation.
       // Suppress only ExifTool's minor warnings; real warnings and errors still
       // flow through the wrapper and block export.
-      const result = await writeMetadataInWorker(file, writeTags, [], (phase) => {
+      const result = await writeMetadataInWorker(file, writeTags, ["-charset", "IPTC=UTF8"], (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
       });
       if (!result.success) {
@@ -1091,14 +1064,8 @@ export default function Home() {
           firstTag(verifiedTags, ["ImageDescription", "Description", "Caption-Abstract"]) ===
             form.description);
 
-      const [originalBuffer, nextBuffer] = await Promise.all([
-        file.arrayBuffer(),
-        outputFile.arrayBuffer(),
-      ]);
-      const [originalDigest, nextDigest] = await Promise.all([
-        digest(scanPayload(originalBuffer)),
-        digest(scanPayload(nextBuffer)),
-      ]);
+      const originalDigest = await jpegScanDigest(file);
+      const nextDigest = await jpegScanDigest(outputFile);
       const samePixels = originalDigest === nextDigest;
 
       setVerified(gpsOk && editableFieldsOk);
@@ -1107,39 +1074,28 @@ export default function Home() {
       if (!editableFieldsOk) throw new Error(t.fieldVerificationFailed);
       if (!samePixels) throw new Error(t.pixelsChanged);
 
-      if (canShareFileOnMobile(navigator, outputFile)) {
-        setPreparedFile(outputFile);
-        setPreparedUrl(URL.createObjectURL(outputFile));
-        setStatus(t.readyToSave);
-      } else {
-        const href = URL.createObjectURL(outputFile);
-        const link = document.createElement("a");
-        link.href = href;
-        link.download = outputName;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
-        setStatus(`${t.exported} ${outputName}`);
-        setReviewOpen(false);
-      }
+      const href = URL.createObjectURL(outputFile);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = outputName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
+      setStatus(`${t.exported} ${outputName}`);
+      setReviewOpen(false);
     } catch (cause) {
       console.error(cause);
       setError(cause instanceof Error ? cause.message : t.exportFailed);
       setStatus("");
       setReviewOpen(false);
     } finally {
+      if (restorePreview) setPreviewUrl(URL.createObjectURL(file));
       setBusy(false);
     }
   };
 
   const hasFile = Boolean(file && fileInfo);
-  const assuranceItems = [
-    { icon: ShieldCheck, title: t.protectedOriginal, copy: t.protectedOriginalCopy },
-    { icon: FileImage, title: t.losslessCheck, copy: t.losslessCheckCopy },
-    { icon: LockKeyhole, title: t.browserOnlyCheck, copy: t.browserOnlyCheckCopy },
-  ];
-
   return (
     <main>
       <header className="site-header">
@@ -1147,7 +1103,7 @@ export default function Home() {
           <span className="brand-mark" aria-hidden="true">
             <span />
           </span>
-          <span>影刻<em>·EXIF</em></span>
+          <span>影刻<em>·元数据</em></span>
         </a>
         <div className="header-note">
           <LockKeyhole size={15} />
@@ -1290,17 +1246,6 @@ export default function Home() {
                     <label><span>ISO</span><input inputMode="numeric" value={form.iso} onChange={(event) => assign("iso", event.target.value)} placeholder={t.isoPlaceholder} /></label>
                     <label><span>{t.focalLength} <small>mm</small></span><input inputMode="decimal" value={form.focalLength} onChange={(event) => assign("focalLength", event.target.value)} placeholder={t.focalLengthPlaceholder} /></label>
                   </div>
-                  <button className="details-toggle" onClick={() => setDetailsOpen((open) => !open)}>
-                    {t.showTags}
-                    <ChevronDown size={15} className={detailsOpen ? "rotate" : ""} />
-                  </button>
-                  {detailsOpen && (
-                    <div className="tag-list">
-                      {Object.entries(tags).slice(0, 80).map(([key, tag]) => (
-                        <div key={key}><span>{key}</span><b>{valueOf(tag) || "—"}</b></div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </aside>
 
@@ -1535,7 +1480,6 @@ export default function Home() {
                     {([
                       ["none", t.cleanupNone, t.noChanges],
                       ["privacy", t.cleanupPrivacy, t.cleanupPrivacyCopy],
-                      ["social", t.cleanupSocial, t.cleanupSocialCopy],
                       ["appearance", t.cleanupAppearance, t.cleanupAppearanceCopy],
                       ["full", t.cleanupFull, t.cleanupFullCopy],
                     ] as const).map(([preset, label, copy]) => (
@@ -1559,6 +1503,46 @@ export default function Home() {
 
                 <section className="form-section">
                   <div className="section-heading">
+                    <span className="section-icon"><Trash2 size={18} /></span>
+                    <div>
+                      <h2>{t.groupDeleteTitle}</h2>
+                      <p>{t.groupDeleteHint}</p>
+                    </div>
+                  </div>
+                  <div className="group-delete-list">
+                    {QUICK_GROUP_DELETE_TAGS.map((tag) => {
+                      const labels: Record<QuickGroupDeleteTag, string> = {
+                        "EXIF:All": t.groupDeleteEXIF,
+                        "XMP:All": t.groupDeleteXMP,
+                        "IPTC:All": t.groupDeleteIPTC,
+                        "Photoshop:All": t.groupDeletePhotoshop,
+                      };
+                      return (
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={groupDeletes.includes(tag)}
+                        className={groupDeletes.includes(tag) ? "active" : ""}
+                        key={tag}
+                        onClick={() => {
+                          setGroupDeletes((current) =>
+                            current.includes(tag)
+                              ? current.filter((item) => item !== tag)
+                              : [...current, tag],
+                          );
+                          setVerified(false);
+                        }}
+                      >
+                        <span>{labels[tag]}</span>
+                        <small>{tag}</small>
+                      </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="form-section">
+                  <div className="section-heading">
                     <span className="section-icon"><ListChecks size={18} /></span>
                     <div>
                       <h2>{t.allTagsBrowser}</h2>
@@ -1576,7 +1560,6 @@ export default function Home() {
                         <span>{field.group}</span>
                         <strong>{field.tag}</strong>
                         <b>{field.value || t.unset}</b>
-                        <small>{field.writable ? t.writableTag : t.readOnlyTag}</small>
                       </div>
                     ))}
                   </div>
@@ -1592,8 +1575,7 @@ export default function Home() {
                   <p>{t.changePreviewHint}</p>
                 </div>
               </div>
-              <div className="change-review-body">
-                <div className="inline-diff-list">
+              <div className="inline-diff-list">
                   {diffs.length ? (
                     diffs.slice(0, 5).map((diff) => (
                       <div
@@ -1612,18 +1594,6 @@ export default function Home() {
                       <span>{t.noChangePreview}</span>
                     </div>
                   )}
-                </div>
-                <div className="assurance-list">
-                  {assuranceItems.map(({ icon: Icon, title, copy }) => (
-                    <div className="assurance-item" key={title}>
-                      <Icon size={16} />
-                      <span>
-                        <strong>{title}</strong>
-                        <small>{copy}</small>
-                      </span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </section>
 
@@ -1651,24 +1621,15 @@ export default function Home() {
         )}
       </section>
 
-      <section className="trust-section" id="privacy">
-        <div className="trust-intro">
-          <span className="eyebrow"><span /> {t.privacyEyebrow}</span>
-          <h2>{t.privacyTitle}</h2>
-          <p>{t.privacyCopy}</p>
-        </div>
-        <div className="trust-grid">
-          <article><LockKeyhole size={22} /><strong>{t.localTitle}</strong><p>{t.localCopy}</p></article>
-          <article><PenLine size={22} /><strong>{t.losslessTitle}</strong><p>{t.losslessCopy}</p></article>
-          <article><Download size={22} /><strong>{t.copyTitle}</strong><p>{t.copyCopy}</p></article>
-          <article><ShieldCheck size={22} /><strong>{t.verifyTitle}</strong><p>{t.verifyCopy}</p></article>
-        </div>
+      <section className="trust-strip" id="privacy">
+        <LockKeyhole size={18} />
+        <p>{t.privacyCopy}</p>
       </section>
 
       <footer>
         <div className="brand footer-brand">
           <span className="brand-mark" aria-hidden="true"><span /></span>
-          <span>影刻<em>·EXIF</em></span>
+          <span>影刻<em>·元数据</em></span>
         </div>
         <p>{t.footerCopy}</p>
         <p className="footer-credit">
@@ -1686,49 +1647,28 @@ export default function Home() {
             <button className="modal-close" aria-label={t.close} onClick={() => setReviewOpen(false)} disabled={busy}>
               <X size={20} />
             </button>
-            <span className="modal-kicker">{preparedFile ? t.readyKicker : t.reviewKicker}</span>
-            <h2 id="review-title">{preparedFile ? t.readyTitle : t.reviewTitle}</h2>
-            <p className="modal-copy">{preparedFile ? t.readyCopy : t.reviewCopy}</p>
-            {!preparedFile && (
-              <div className="diff-list">
-                {diffs.map((diff) => (
-                  <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>
-                    <strong>{diff.label}</strong>
-                    <span>{diff.before}</span>
-                    <ArrowRight size={15} />
-                    <b>{diff.after}</b>
-                  </div>
-                ))}
-              </div>
-            )}
+            <span className="modal-kicker">{t.reviewKicker}</span>
+            <h2 id="review-title">{t.reviewTitle}</h2>
+            <p className="modal-copy">{t.reviewCopy}</p>
+            <div className="diff-list">
+              {diffs.map((diff) => (
+                <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>
+                  <strong>{diff.label}</strong>
+                  <span>{diff.before}</span>
+                  <ArrowRight size={15} />
+                  <b>{diff.after}</b>
+                </div>
+              ))}
+            </div>
             <div className="output-name">
               <FileImage size={18} />
               <span>{t.outputFile}</span>
               <strong>{file ? outputNameFor(file.name) : ""}</strong>
             </div>
-            {preparedFile ? (
-              <div className="delivery-actions">
-                <button className="primary-button modal-action" onClick={() => void sharePreparedFile()}>
-                  <Upload size={18} />
-                  {t.shareAndSave}
-                </button>
-                <a
-                  className="secondary-button modal-action fallback-download"
-                  href={preparedUrl}
-                  download={preparedFile.name}
-                  onClick={() => setStatus(`${t.downloadStarted} ${preparedFile.name}`)}
-                >
-                  <Download size={18} />
-                  {t.directDownload}
-                </a>
-                <small>{t.directDownloadHint}</small>
-              </div>
-            ) : (
-              <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
-                {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
-                {busy ? status || t.writing : t.confirmDownload}
-              </button>
-            )}
+            <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
+              {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}
+              {busy ? status || t.writing : t.confirmDownload}
+            </button>
           </section>
         </div>
       )}
