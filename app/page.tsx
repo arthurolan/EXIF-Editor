@@ -936,6 +936,11 @@ export default function Home() {
 
       if (gpsMode === "remove") {
         writeTags["GPS:All"] = "";
+        // GPS may also be mirrored in XMP. Remove only GPS-prefixed XMP tags
+        // actually present in this file, avoiding broad XMP deletion.
+        for (const field of metadataFields) {
+          if (field.group === "XMP" && field.tag.startsWith("GPS")) writeTags[field.key] = "";
+        }
       } else if (gpsMode === "edit") {
         const latitude = Number(form.latitude);
         const longitude = Number(form.longitude);
@@ -954,6 +959,13 @@ export default function Home() {
       for (const tag of CLEANUP_PRESETS[cleanupPreset].tags) {
         writeTags[tag] = "";
       }
+      if (cleanupPreset === "privacy") {
+        // ExifTool warns when asked to delete camera-specific serial tags that
+        // do not exist. Delete every serial field actually found instead.
+        for (const field of metadataFields) {
+          if (/serial.?number/i.test(field.tag)) writeTags[field.key] = "";
+        }
+      }
       for (const tag of groupDeletes) {
         writeTags[tag] = "";
       }
@@ -961,7 +973,10 @@ export default function Home() {
       // Browser text is UTF-8. Explicitly mark IPTC text the same way so old
       // JPEGs without CodedCharacterSet don't fall back to the unavailable
       // Latin codec in the WASM build.
-      if (Object.keys(writeTags).some((tag) => tag.startsWith("IPTC:") && writeTags[tag] !== "")) {
+      const hasIptcTextWrite = Object.keys(writeTags).some(
+        (tag) => tag.startsWith("IPTC:") && writeTags[tag] !== "",
+      );
+      if (hasIptcTextWrite) {
         writeTags["IPTC:CodedCharacterSet"] = "UTF8";
       }
 
@@ -974,9 +989,14 @@ export default function Home() {
       // but the WASM wrapper treats any stderr output as a failed operation.
       // Suppress only ExifTool's minor warnings; real warnings and errors still
       // flow through the wrapper and block export.
-      const result = await writeMetadataInWorker(file, writeTags, ["-charset", "IPTC=UTF8"], (phase) => {
+      const result = await writeMetadataInWorker(
+        file,
+        writeTags,
+        hasIptcTextWrite ? ["-charset", "IPTC=UTF8"] : [],
+        (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
-      });
+        },
+      );
       if (!result.success) {
         const resourceFailed = result.error.startsWith("EXIF_WASM_");
         throw new Error(

@@ -22,9 +22,10 @@ test("uses only PNG IDAT chunks for image-data verification", () => {
   assert.deepEqual([...imageDataPayload(png, "png")], [73, 68, 65, 84, 1, 2, 73, 68, 65, 84, 4]);
 });
 
-test("uses WebP visual chunks while excluding metadata chunks", () => {
+test("uses WebP bitstream chunks while excluding metadata and VP8X flags", () => {
   const webp = bytes(
     82, 73, 70, 70, 30, 0, 0, 0, 87, 69, 66, 80,
+    86, 80, 56, 88, 2, 0, 0, 0, 9, 9,
     86, 80, 56, 32, 2, 0, 0, 0, 1, 2,
     88, 77, 80, 32, 2, 0, 0, 0, 3, 4,
   );

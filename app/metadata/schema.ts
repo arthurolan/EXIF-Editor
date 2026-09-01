@@ -69,14 +69,6 @@ export const CLEANUP_PRESETS = {
   privacy: {
     tags: [
       "GPS:All",
-      "EXIF:SerialNumber",
-      "EXIF:InternalSerialNumber",
-      "EXIF:CameraSerialNumber",
-      "EXIF:LensSerialNumber",
-      "EXIF:BodySerialNumber",
-      "XMP-exifEX:CameraSerialNumber",
-      "XMP-exifEX:LensSerialNumber",
-      "XMP-aux:LensSerialNumber",
       "Software",
       "ProcessingSoftware",
       "ThumbnailImage",

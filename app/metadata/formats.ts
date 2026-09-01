@@ -71,7 +71,9 @@ const webpImageData = (bytes: Uint8Array): Uint8Array => {
     const length = new DataView(bytes.buffer, bytes.byteOffset + offset + 4, 4).getUint32(0, true);
     const end = offset + 8 + length;
     if (end > bytes.length) return bytes;
-    if (["VP8 ", "VP8L", "VP8X"].includes(type)) parts.push(bytes.subarray(offset, end));
+    // VP8X only describes the canvas and metadata-presence flags. ExifTool may
+    // change those flags when metadata is written, without changing pixels.
+    if (["VP8 ", "VP8L"].includes(type)) parts.push(bytes.subarray(offset, end));
     offset = end + (length % 2);
   }
   return parts.length ? concatBytes(parts) : bytes;
