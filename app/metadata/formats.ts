@@ -32,6 +32,89 @@ const concatBytes = (parts: Uint8Array[]): Uint8Array => {
   return output;
 };
 
+const standaloneArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.slice().buffer as ArrayBuffer;
+
+const readBigEndianUint32 = (bytes: Uint8Array, offset: number): number =>
+  new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0);
+
+const writeBigEndianUint32 = (value: number): Uint8Array => {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value);
+  return bytes;
+};
+
+const crc32 = (bytes: Uint8Array): number => {
+  let value = 0xffffffff;
+  for (const byte of bytes) {
+    value ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+  }
+  return (value ^ 0xffffffff) >>> 0;
+};
+
+const utf8TextInLegacyPngChunk = (data: Uint8Array): { keyword: Uint8Array; text: Uint8Array } | null => {
+  const separator = data.indexOf(0);
+  if (separator < 1) return null;
+  const keyword = data.subarray(0, separator);
+  const text = data.subarray(separator + 1);
+  try {
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(text);
+    return /[^\x00-\x7f]/.test(decoded) ? { keyword, text } : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A few PNG generators put UTF-8 into legacy Latin-1 tEXt chunks. ExifTool's
+ * browser WASM runtime cannot decode that malformed combination. Re-encode
+ * only those chunks as standards-compliant UTF-8 iTXt; IDAT bytes are copied
+ * byte-for-byte, so the image itself is unchanged.
+ */
+export const normalizePngUtf8TextChunks = (buffer: ArrayBuffer): Uint8Array | null => {
+  const source = new Uint8Array(buffer);
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (!signature.every((byte, index) => source[index] === byte)) return null;
+
+  const parts: Uint8Array[] = [source.subarray(0, 8)];
+  let offset = 8;
+  let changed = false;
+  while (offset + 12 <= source.length) {
+    const length = readBigEndianUint32(source, offset);
+    const end = offset + 12 + length;
+    if (end > source.length) return null;
+    const type = String.fromCharCode(...source.subarray(offset + 4, offset + 8));
+    const data = source.subarray(offset + 8, offset + 8 + length);
+    const legacyText = type === "tEXt" ? utf8TextInLegacyPngChunk(data) : null;
+    if (!legacyText) {
+      parts.push(source.subarray(offset, end));
+    } else {
+      const iTxtData = concatBytes([
+        legacyText.keyword,
+        new Uint8Array([0, 0, 0, 0, 0]),
+        legacyText.text,
+      ]);
+      const typeBytes = new TextEncoder().encode("iTXt");
+      const checksum = writeBigEndianUint32(crc32(concatBytes([typeBytes, iTxtData])));
+      parts.push(writeBigEndianUint32(iTxtData.length), typeBytes, iTxtData, checksum);
+      changed = true;
+    }
+    offset = end;
+    if (type === "IEND") return changed ? concatBytes(parts) : null;
+  }
+  return null;
+};
+
+export const fileForMetadataWrite = async (
+  file: File,
+  format: SupportedImageFormat,
+): Promise<File> => {
+  if (format !== "png") return file;
+  const normalized = normalizePngUtf8TextChunks(await file.arrayBuffer());
+  return normalized ? new File([standaloneArrayBuffer(normalized)], file.name, { type: file.type }) : file;
+};
+
 const jpegImageData = (bytes: Uint8Array): Uint8Array => {
   for (let index = 2; index < bytes.length - 4; ) {
     if (bytes[index] !== 0xff) {

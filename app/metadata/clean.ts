@@ -48,7 +48,9 @@ const DELETION_GROUPS: Record<string, MetadataField["group"][]> = {
 };
 
 const matchesIndividualDeletion = (field: MetadataField, tag: string): boolean =>
-  field.key.toLowerCase() === tag.toLowerCase() || field.tag.toLowerCase() === tag.toLowerCase();
+  tag.includes(":")
+    ? field.key.toLowerCase() === tag.toLowerCase()
+    : field.tag.toLowerCase() === tag.toLowerCase();
 
 /**
  * Checks only metadata the current operation asked ExifTool to delete. File and

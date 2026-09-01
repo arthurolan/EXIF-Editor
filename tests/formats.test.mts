@@ -1,9 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { imageDataPayload, imageFormatFromFile } from "../app/metadata/formats";
+import {
+  imageDataPayload,
+  imageFormatFromFile,
+  normalizePngUtf8TextChunks,
+} from "../app/metadata/formats";
 
 const bytes = (...values: number[]) => new Uint8Array(values).buffer;
+
+const pngChunk = (type: string, data: Uint8Array): number[] => [
+  0,
+  0,
+  0,
+  data.length,
+  ...[...type].map((character) => character.charCodeAt(0)),
+  ...data,
+  0,
+  0,
+  0,
+  0,
+];
 
 test("detects JPEG, PNG, and WebP by MIME type or extension", () => {
   assert.equal(imageFormatFromFile({ name: "photo.JPG", type: "" })?.format, "jpeg");
@@ -20,6 +37,22 @@ test("uses only PNG IDAT chunks for image-data verification", () => {
     0, 0, 0, 1, 73, 68, 65, 84, 4, 0, 0, 0, 0,
   );
   assert.deepEqual([...imageDataPayload(png, "png")], [73, 68, 65, 84, 1, 2, 73, 68, 65, 84, 4]);
+});
+
+test("converts malformed UTF-8 PNG tEXt to iTXt without changing IDAT", () => {
+  const source = bytes(
+    137, 80, 78, 71, 13, 10, 26, 10,
+    ...pngChunk("tEXt", new TextEncoder().encode("Description\0中文提示词")),
+    ...pngChunk("IDAT", new Uint8Array([1, 2, 3])),
+    ...pngChunk("IEND", new Uint8Array()),
+  );
+  const normalized = normalizePngUtf8TextChunks(source);
+  assert.ok(normalized);
+  assert.deepEqual(
+    [...imageDataPayload(normalized.slice().buffer as ArrayBuffer, "png")],
+    [73, 68, 65, 84, 1, 2, 3],
+  );
+  assert.equal(new TextDecoder().decode(normalized).includes("iTXt"), true);
 });
 
 test("uses WebP bitstream chunks while excluding metadata and VP8X flags", () => {

@@ -30,6 +30,7 @@ import { outputNameFor } from "./export-delivery.mjs";
 import {
   imageDataDigest,
   imageFormatFromFile,
+  fileForMetadataWrite,
   type ImageFormatInfo,
 } from "./metadata/formats";
 import {
@@ -990,8 +991,9 @@ export default function Home() {
       // but the WASM wrapper treats any stderr output as a failed operation.
       // Suppress only ExifTool's minor warnings; real warnings and errors still
       // flow through the wrapper and block export.
+      const writeInput = await fileForMetadataWrite(file, format.format);
       const result = await writeMetadataInWorker(
-        file,
+        writeInput,
         writeTags,
         // Midjourney and other PNG exporters sometimes put UTF-8 text into a
         // legacy tEXt chunk. The WASM build cannot load its Latin codec; force
