@@ -28,13 +28,19 @@ import dynamic from "next/dynamic";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { outputNameFor } from "./export-delivery.mjs";
 import {
+  imageDataDigest,
+  imageFormatFromFile,
+  type ImageFormatInfo,
+} from "./metadata/formats";
+import {
+  ADVANCED_DELETE_TAGS,
+  AdvancedDeleteTag,
   CLEANUP_PRESETS,
   CleanupPreset,
   MetadataField,
   normalizeExifToolFields,
-  QUICK_GROUP_DELETE_TAGS,
-  QuickGroupDeleteTag,
 } from "./metadata/schema";
+import { remainingDeletionTargets } from "./metadata/clean";
 import {
   SemanticFieldKey,
   semanticConflicts,
@@ -55,17 +61,17 @@ const COPY = {
     privacyLink: "关于隐私",
     versionBadge: "V2.0 工作流",
     heroTitle: "照片元数据工作台",
-    heroCopy1: "读取、编辑和清理 JPEG 的 EXIF、XMP 与 IPTC 信息。",
+    heroCopy1: "读取、编辑和清理 JPEG、PNG、WebP 的 EXIF、XMP 与 IPTC 信息。",
     heroCopy2: "不上传原片，不改变画质，只导出新的副本。",
     flowLabel: "处理流程",
     chooseStep: "选择照片",
     editStep: "编辑信息",
     verifyStep: "核验导出",
     workspaceLabel: "照片元数据工作区",
-    chooseAria: "选择 JPEG 照片",
+    chooseAria: "选择 JPEG、PNG 或 WebP 图片",
     startHere: "从这里开始",
     dropTitle: "把一张照片拖到这里",
-    dropCopy: "或从设备中选择一张 JPEG 图片",
+    dropCopy: "或从设备中选择一张 JPEG、PNG 或 WebP 图片",
     reading: "正在读取…",
     choosePhoto: "选择照片",
     maxSize: "单张最大 500 MB",
@@ -147,9 +153,15 @@ const COPY = {
     groupDeleteTitle: "按组删除",
     groupDeleteHint: "可单独移除指定元数据组，并可与清理预设组合使用。",
     groupDeleteEXIF: "删除 EXIF",
+    groupDeleteGPS: "删除 GPS",
     groupDeleteXMP: "删除 XMP",
     groupDeleteIPTC: "删除 IPTC",
+    groupDeleteMakerNotes: "删除 MakerNotes",
+    groupDeleteICC: "删除 ICC 色彩配置",
     groupDeletePhotoshop: "删除 Photoshop 数据",
+    groupDeleteThumbnail: "删除缩略图",
+    groupDeletePreview: "删除预览图",
+    groupDeleteC2PA: "删除 Content Credentials",
     groupDeleteDiff: "单独删除",
     undoAll: "撤销全部修改",
     changesPending: "项待写入",
@@ -159,12 +171,12 @@ const COPY = {
     noChangePreview: "改动会实时出现在这里。",
     reviewExport: "核对并导出副本",
     verificationNote: "GPS 已复核 · 压缩图像数据未改变",
-    privacyCopy: "仅在当前浏览器本地处理，不上传原片；写入后会复核字段与 JPEG 压缩图像数据，并导出新副本。",
+    privacyCopy: "仅在当前浏览器本地处理，不上传原片；写入后会复核字段与图像编码数据，并导出新副本。",
     footerCopy: "本地处理 · 无损写入 · 导出副本",
     close: "关闭",
     reviewKicker: "导出前确认",
     reviewTitle: "这些信息将被写入副本",
-    reviewCopy: "原片不会被覆盖。写入后会重新读取 EXIF，并确认 JPEG 压缩图像数据保持不变。",
+    reviewCopy: "原片不会被覆盖。写入后会重新读取元数据，并确认图像编码数据保持不变。",
     outputFile: "输出文件",
     writing: "正在写入并验证…",
     confirmDownload: "确认写入并验证",
@@ -187,8 +199,8 @@ const COPY = {
     gpsExists: "存在 GPS 信息",
     gpsRemoved: "完整删除 GPS IFD",
     gpsCoordinates: "GPS 坐标",
-    jpegOnly: "首版仅支持 JPEG 图片（.jpg 或 .jpeg）。",
-    fileTooLarge: "图片超过 100 MB。请先选择体积更小的 JPEG 文件。",
+    jpegOnly: "目前支持 JPEG、PNG 和 WebP 图片。",
+    fileTooLarge: "图片超过 100 MB。请先选择体积更小的文件。",
     parseFailed: "没有成功解析这张图片。文件可能已损坏，或包含暂不支持的元数据结构。",
     invalidCoordinates: "请输入有效的 WGS-84 经纬度：纬度范围 −90～90，经度范围 −180～180。",
     nothingToWrite: "还没有需要写入的修改。",
@@ -200,9 +212,10 @@ const COPY = {
     verifyingFile: "正在重新读取并核验导出文件…",
     gpsVerificationFailed: "写入后的 GPS 复核未通过，已阻止下载。",
     fieldVerificationFailed: "写入后的字段复核未通过，已阻止下载。",
-    pixelsChanged: "检测到 JPEG 压缩图像数据发生变化，已阻止下载。",
+    cleanupVerificationFailed: "写入后的隐私清理复核未通过，已阻止下载。",
+    pixelsChanged: "检测到图像编码数据发生变化，已阻止下载。",
     exported: "已验证并导出",
-    exportFailed: "导出失败，请换一张 JPEG 后重试。",
+    exportFailed: "导出失败，请换一张图片后重试。",
   },
   en: {
     home: "Yingke photo metadata home",
@@ -210,17 +223,17 @@ const COPY = {
     privacyLink: "Privacy",
     versionBadge: "V2.0 workflow",
     heroTitle: "Photo Metadata Workspace",
-    heroCopy1: "Read, edit, and clean JPEG EXIF, XMP, and IPTC metadata.",
+    heroCopy1: "Read, edit, and clean JPEG, PNG, and WebP EXIF, XMP, and IPTC metadata.",
     heroCopy2: "Your original never leaves the browser or gets recompressed.",
     flowLabel: "Workflow",
     chooseStep: "Choose photo",
     editStep: "Edit metadata",
     verifyStep: "Verify & export",
     workspaceLabel: "Photo metadata workspace",
-    chooseAria: "Choose a JPEG photo",
+    chooseAria: "Choose a JPEG, PNG, or WebP image",
     startHere: "START HERE",
     dropTitle: "Drop a photo here",
-    dropCopy: "or choose a JPEG image from your device",
+    dropCopy: "or choose a JPEG, PNG, or WebP image from your device",
     reading: "Reading…",
     choosePhoto: "Choose photo",
     maxSize: "Up to 500 MB",
@@ -302,9 +315,15 @@ const COPY = {
     groupDeleteTitle: "Remove by group",
     groupDeleteHint: "Remove individual metadata groups. These can be combined with a cleanup preset.",
     groupDeleteEXIF: "Remove EXIF",
+    groupDeleteGPS: "Remove GPS",
     groupDeleteXMP: "Remove XMP",
     groupDeleteIPTC: "Remove IPTC",
+    groupDeleteMakerNotes: "Remove MakerNotes",
+    groupDeleteICC: "Remove ICC profile",
     groupDeletePhotoshop: "Remove Photoshop data",
+    groupDeleteThumbnail: "Remove thumbnail",
+    groupDeletePreview: "Remove preview image",
+    groupDeleteC2PA: "Remove Content Credentials",
     groupDeleteDiff: "Group removal",
     undoAll: "Undo all changes",
     changesPending: "changes pending",
@@ -314,12 +333,12 @@ const COPY = {
     noChangePreview: "Edits will appear here in real time.",
     reviewExport: "Review & export copy",
     verificationNote: "GPS verified · Compressed image data unchanged",
-    privacyCopy: "Everything runs locally in this browser. The original is never uploaded; written fields and JPEG compressed image data are checked before a new copy is exported.",
+    privacyCopy: "Everything runs locally in this browser. The original is never uploaded; written fields and encoded image data are checked before a new copy is exported.",
     footerCopy: "Local processing · Lossless editing · Export a copy",
     close: "Close",
     reviewKicker: "BEFORE EXPORT",
     reviewTitle: "These changes will be written to the copy",
-    reviewCopy: "Your original will not be overwritten. EXIF is read again after writing and the compressed JPEG image data is checked.",
+    reviewCopy: "Your original will not be overwritten. Metadata is read again after writing and the encoded image data is checked.",
     outputFile: "Output file",
     writing: "Writing & verifying…",
     confirmDownload: "Write changes & verify",
@@ -342,8 +361,8 @@ const COPY = {
     gpsExists: "GPS data exists",
     gpsRemoved: "Remove complete GPS IFD",
     gpsCoordinates: "GPS coordinates",
-    jpegOnly: "This first version supports JPEG images only (.jpg or .jpeg).",
-    fileTooLarge: "This image is larger than 100 MB. Please choose a smaller JPEG file.",
+    jpegOnly: "JPEG, PNG, and WebP images are currently supported.",
+    fileTooLarge: "This image is larger than 100 MB. Please choose a smaller file.",
     parseFailed: "This image could not be parsed. It may be damaged or contain an unsupported metadata structure.",
     invalidCoordinates: "Enter valid WGS-84 coordinates: latitude −90 to 90 and longitude −180 to 180.",
     nothingToWrite: "There are no changes to write yet.",
@@ -355,9 +374,10 @@ const COPY = {
     verifyingFile: "Reading and verifying the exported file…",
     gpsVerificationFailed: "GPS verification failed after writing. The download was blocked.",
     fieldVerificationFailed: "Field verification failed after writing. The download was blocked.",
-    pixelsChanged: "The compressed JPEG image data changed. The download was blocked.",
+    cleanupVerificationFailed: "Privacy cleanup verification failed after writing. The download was blocked.",
+    pixelsChanged: "The encoded image data changed. The download was blocked.",
     exported: "Verified and exported",
-    exportFailed: "Export failed. Please try another JPEG.",
+    exportFailed: "Export failed. Please try another image.",
   },
 } as const;
 
@@ -402,8 +422,9 @@ type DiffItem = {
 type FileInfo = {
   name: string;
   size: number;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
+  format: ImageFormatInfo;
 };
 
 const EMPTY_DATA: EditableData = {
@@ -517,34 +538,6 @@ const getImageDimensions = (url: string): Promise<{ width: number; height: numbe
     image.src = url;
   });
 
-const scanPayload = (buffer: ArrayBuffer): Uint8Array => {
-  const bytes = new Uint8Array(buffer);
-  for (let index = 2; index < bytes.length - 4; ) {
-    if (bytes[index] !== 0xff) {
-      index += 1;
-      continue;
-    }
-    const marker = bytes[index + 1];
-    if (marker === 0xda) return bytes.subarray(index);
-    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
-      index += 2;
-      continue;
-    }
-    const length = (bytes[index + 2] << 8) | bytes[index + 3];
-    if (length < 2) break;
-    index += 2 + length;
-  }
-  return bytes;
-};
-
-const jpegScanDigest = async (file: Blob): Promise<string> => {
-  const payload = scanPayload(await file.arrayBuffer());
-  const result = await crypto.subtle.digest("SHA-256", payload as unknown as BufferSource);
-  return Array.from(new Uint8Array(result))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-};
-
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
@@ -552,12 +545,13 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [previewAvailable, setPreviewAvailable] = useState(false);
   const [metadataFields, setMetadataFields] = useState<MetadataField[]>([]);
   const [original, setOriginal] = useState<EditableData>(EMPTY_DATA);
   const [form, setForm] = useState<EditableData>(EMPTY_DATA);
   const [gpsMode, setGpsMode] = useState<GpsMode>("keep");
   const [cleanupPreset, setCleanupPreset] = useState<CleanupPreset>("none");
-  const [groupDeletes, setGroupDeletes] = useState<QuickGroupDeleteTag[]>([]);
+  const [groupDeletes, setGroupDeletes] = useState<AdvancedDeleteTag[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -611,8 +605,10 @@ export default function Home() {
     setPixelVerified(false);
     setReviewOpen(false);
     setMetadataFields([]);
+    setPreviewAvailable(false);
 
-    if (!["image/jpeg", "image/jpg"].includes(selected.type) && !/\.jpe?g$/i.test(selected.name)) {
+    const format = imageFormatFromFile(selected);
+    if (!format) {
       setError(t.jpegOnly);
       return;
     }
@@ -631,12 +627,12 @@ export default function Home() {
       // holding two complete virtual-file copies in memory at the same time.
       const loaded = (await ExifReader.load(selected, {
         includeUnknown: true,
-      })) as ExifTags;
+      }).catch(() => ({}))) as ExifTags;
       const exifToolResult = await readMetadataInWorker(selected, (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.reading);
       });
       const nextUrl = URL.createObjectURL(selected);
-      const dimensions = await getImageDimensions(nextUrl);
+      const dimensions = await getImageDimensions(nextUrl).catch(() => null);
       const nextMetadataFields = exifToolResult.success
         ? normalizeExifToolFields(exifToolResult.data)
         : [];
@@ -647,8 +643,10 @@ export default function Home() {
       setFileInfo({
         name: selected.name,
         size: selected.size,
-        ...dimensions,
+        ...(dimensions ?? {}),
+        format,
       });
+      setPreviewAvailable(Boolean(dimensions));
       setMetadataFields(nextMetadataFields);
 
       const latitude = gpsCoordinate(loaded, "Latitude");
@@ -691,7 +689,9 @@ export default function Home() {
       setGroupDeletes([]);
       setMapLoaded(false);
       setC2paDetected(
-        Object.keys(loaded).some((key) => /c2pa|jumbf|content.?credential/i.test(key)),
+        [...Object.keys(loaded), ...nextMetadataFields.map((field) => field.key)].some((key) =>
+          /c2pa|jumbf|content.?credential/i.test(key),
+        ),
       );
       setStatus("");
     } catch (cause) {
@@ -871,6 +871,11 @@ export default function Home() {
 
   const exportFile = async () => {
     if (!file) return;
+    const format = imageFormatFromFile(file);
+    if (!format) {
+      setError(t.exportFailed);
+      return;
+    }
     setBusy(true);
     setError("");
     setStatus(t.writingMetadata);
@@ -882,6 +887,7 @@ export default function Home() {
     const restorePreview = Boolean(previewUrl);
     if (restorePreview) {
       setPreviewUrl("");
+      setPreviewAvailable(false);
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
     }
 
@@ -983,8 +989,10 @@ export default function Home() {
       }
 
       const outputBuffer = result.data;
-      const outputName = outputNameFor(file.name);
-      const outputFile = new File([outputBuffer], outputName, { type: "image/jpeg" });
+      const outputName = outputNameFor(file.name, format.extension);
+      const outputFile = new File([outputBuffer], outputName, {
+        type: format.mimeType,
+      });
 
       setStatus(t.verifyingFile);
       const verifiedTags = (await ExifReader.load(outputFile, {
@@ -1028,6 +1036,12 @@ export default function Home() {
           semanticValueFromFields(verifiedMetadataFields, "country") === form.country) &&
         (form.description === original.description ||
           semanticValueFromFields(verifiedMetadataFields, "description") === form.description);
+      const remainingDeletionTags = remainingDeletionTargets(
+        verifiedMetadataFields,
+        Object.entries(writeTags)
+          .filter(([, value]) => value === "")
+          .map(([tag]) => tag),
+      );
       const editableFieldsOk =
         semanticFieldsOk &&
         (form.make === original.make || firstTag(verifiedTags, ["Make"]) === form.make) &&
@@ -1064,14 +1078,18 @@ export default function Home() {
           firstTag(verifiedTags, ["ImageDescription", "Description", "Caption-Abstract"]) ===
             form.description);
 
-      const originalDigest = await jpegScanDigest(file);
-      const nextDigest = await jpegScanDigest(outputFile);
+      const originalDigest = await imageDataDigest(file, format.format);
+      const nextDigest = await imageDataDigest(outputFile, format.format);
       const samePixels = originalDigest === nextDigest;
 
       setVerified(gpsOk && editableFieldsOk);
       setPixelVerified(samePixels);
       if (!gpsOk) throw new Error(t.gpsVerificationFailed);
       if (!editableFieldsOk) throw new Error(t.fieldVerificationFailed);
+      if (remainingDeletionTags.length) {
+        console.error("Metadata cleanup verification failed", JSON.stringify(remainingDeletionTags));
+        throw new Error(t.cleanupVerificationFailed);
+      }
       if (!samePixels) throw new Error(t.pixelsChanged);
 
       const href = URL.createObjectURL(outputFile);
@@ -1090,7 +1108,10 @@ export default function Home() {
       setStatus("");
       setReviewOpen(false);
     } finally {
-      if (restorePreview) setPreviewUrl(URL.createObjectURL(file));
+      if (restorePreview) {
+        setPreviewUrl(URL.createObjectURL(file));
+        setPreviewAvailable(true);
+      }
       setBusy(false);
     }
   };
@@ -1165,7 +1186,7 @@ export default function Home() {
             <input
               ref={inputRef}
               type="file"
-              accept=".jpg,.jpeg,image/jpeg"
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
               onChange={onInput}
               aria-label={t.chooseAria}
             />
@@ -1185,7 +1206,7 @@ export default function Home() {
               {busy ? t.reading : t.choosePhoto}
             </button>
             <div className="drop-meta">
-              <span>JPG / JPEG</span>
+              <span>JPEG / PNG / WebP</span>
               <span>{t.maxSize}</span>
               <span><ShieldCheck size={14} />{t.neverUpload}</span>
             </div>
@@ -1204,7 +1225,12 @@ export default function Home() {
                 <FileImage size={19} />
                 <div>
                   <strong>{fileInfo?.name}</strong>
-                  <span>{fileInfo?.width} × {fileInfo?.height} · {formatBytes(fileInfo?.size ?? 0)}</span>
+                  <span>
+                    {fileInfo?.width && fileInfo.height
+                      ? `${fileInfo.width} × ${fileInfo.height} · `
+                      : ""}
+                    {fileInfo?.format.label} · {formatBytes(fileInfo?.size ?? 0)}
+                  </span>
                 </div>
               </div>
               <button
@@ -1214,7 +1240,7 @@ export default function Home() {
               >
                 <Upload size={16} />{t.changePhoto}
               </button>
-              <input ref={inputRef} className="sr-only" type="file" accept=".jpg,.jpeg,image/jpeg" onChange={onInput} />
+              <input ref={inputRef} className="sr-only" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={onInput} />
             </div>
 
             {c2paDetected && (
@@ -1227,8 +1253,16 @@ export default function Home() {
             <div className="editor-grid">
               <aside className="preview-column">
                 <div className="image-frame">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewUrl} alt={t.previewAlt} />
+                  {previewAvailable ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={previewUrl} alt={t.previewAlt} />
+                  ) : (
+                    <div className="preview-unavailable" role="status">
+                      <FileImage size={28} />
+                      <strong>{fileInfo?.format.label}</strong>
+                      <span>{language === "zh" ? "此浏览器无法预览该文件，仍可编辑元数据。" : "This browser cannot preview the file, but its metadata can still be edited."}</span>
+                    </div>
+                  )}
                 </div>
                 <div className="camera-card">
                   <div className="card-title">
@@ -1510,12 +1544,18 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="group-delete-list">
-                    {QUICK_GROUP_DELETE_TAGS.map((tag) => {
-                      const labels: Record<QuickGroupDeleteTag, string> = {
+                    {ADVANCED_DELETE_TAGS.map((tag) => {
+                      const labels: Record<AdvancedDeleteTag, string> = {
                         "EXIF:All": t.groupDeleteEXIF,
+                        "GPS:All": t.groupDeleteGPS,
                         "XMP:All": t.groupDeleteXMP,
                         "IPTC:All": t.groupDeleteIPTC,
+                        "MakerNotes:All": t.groupDeleteMakerNotes,
+                        "ICC_Profile:All": t.groupDeleteICC,
                         "Photoshop:All": t.groupDeletePhotoshop,
+                        ThumbnailImage: t.groupDeleteThumbnail,
+                        PreviewImage: t.groupDeletePreview,
+                        "JUMBF:All": t.groupDeleteC2PA,
                       };
                       return (
                       <button
@@ -1663,7 +1703,7 @@ export default function Home() {
             <div className="output-name">
               <FileImage size={18} />
               <span>{t.outputFile}</span>
-              <strong>{file ? outputNameFor(file.name) : ""}</strong>
+              <strong>{file && fileInfo ? outputNameFor(file.name, fileInfo.format.extension) : ""}</strong>
             </div>
             <button className="primary-button modal-action" onClick={() => void exportFile()} disabled={busy}>
               {busy ? <RefreshCw className="spin" size={18} /> : <Download size={18} />}

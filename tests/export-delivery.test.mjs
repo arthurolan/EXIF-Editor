@@ -12,6 +12,11 @@ test("adds exactly one edited suffix to JPEG output names", () => {
   assert.equal(outputNameFor("IMG_4846_edited.jpeg"), "IMG_4846_edited.jpg");
 });
 
+test("preserves PNG and WebP output extensions", () => {
+  assert.equal(outputNameFor("cover.png", "png"), "cover_edited.png");
+  assert.equal(outputNameFor("cover_edited.webp", "webp"), "cover_edited.webp");
+});
+
 test("detects mobile browsers without treating a desktop Mac as mobile", () => {
   assert.equal(isMobileDevice({ userAgent: "Mozilla/5.0 (iPhone) Mobile" }), true);
   assert.equal(isMobileDevice({ userAgent: "Mozilla/5.0 (Linux; Android 16)" }), true);

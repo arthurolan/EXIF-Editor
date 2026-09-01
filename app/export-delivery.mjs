@@ -1,6 +1,7 @@
-export const outputNameFor = (fileName) => {
-  const baseName = fileName.replace(/\.jpe?g$/i, "");
-  return `${/_edited$/i.test(baseName) ? baseName : `${baseName}_edited`}.jpg`;
+export const outputNameFor = (fileName, extension = "jpg") => {
+  const baseName = fileName.replace(/\.(?:jpe?g|png|webp)$/i, "");
+  const normalizedExtension = extension.toLowerCase() === "jpeg" ? "jpg" : extension.toLowerCase();
+  return `${/_edited$/i.test(baseName) ? baseName : `${baseName}_edited`}.${normalizedExtension}`;
 };
 
 export const isMobileDevice = ({

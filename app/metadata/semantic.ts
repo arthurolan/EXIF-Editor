@@ -1,4 +1,4 @@
-import { MetadataField } from "./schema";
+import type { MetadataField } from "./schema";
 
 export type SemanticFieldKey =
   | "artist"

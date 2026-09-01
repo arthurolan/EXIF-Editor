@@ -571,6 +571,26 @@ button:disabled {
   object-fit: contain;
 }
 
+.preview-unavailable {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  max-width: 240px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.preview-unavailable strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.preview-unavailable span {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .camera-card {
   margin-top: 18px;
   padding: 18px;
