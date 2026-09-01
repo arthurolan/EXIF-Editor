@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deletedMetadataIsAbsent, remainingDeletionTargets } from "../app/metadata/clean";
+import {
+  deletedMetadataIsAbsent,
+  isGpsMetadataField,
+  privacySerialDeletionTags,
+  remainingDeletionTargets,
+} from "../app/metadata/clean";
 import { ADVANCED_DELETE_TAGS, normalizeExifToolFields } from "../app/metadata/schema";
 import {
   semanticConflicts,
@@ -90,6 +95,33 @@ test("verifies group and individual metadata cleanup without treating File data 
   assert.deepEqual(remainingDeletionTargets(leakedOutput, ["GPS:All", "SerialNumber"]), [
     "GPS:All",
     "SerialNumber",
+  ]);
+});
+
+test("removes and verifies GPS from EXIF and XMP, but ignores derived Composite values", () => {
+  const fields = normalizeExifToolFields({
+    "GPS:GPSLatitude": "31.2",
+    "EXIF:GPSLongitude": "121.5",
+    "XMP-exif:GPSAltitude": "12",
+    "Composite:GPSPosition": "31.2, 121.5",
+  });
+  assert.deepEqual(
+    fields.filter(isGpsMetadataField).map((field) => field.key),
+    ["EXIF:GPSLongitude", "GPS:GPSLatitude", "XMP-exif:GPSAltitude"],
+  );
+  assert.deepEqual(remainingDeletionTargets(fields, ["GPS:All"]), ["GPS:All"]);
+});
+
+test("uses safe privacy serial deletes and falls back to group deletion for read-only XMP", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:SerialNumber": "camera-123",
+    "XMP-exif:SerialNumber": "read-only-alias",
+    "MakerNotes:SerialNumber": "maker-123",
+  });
+  assert.deepEqual(privacySerialDeletionTags(fields), [
+    "EXIF:SerialNumber",
+    "MakerNotes:All",
+    "XMP:All",
   ]);
 });
 

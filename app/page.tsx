@@ -40,7 +40,11 @@ import {
   MetadataField,
   normalizeExifToolFields,
 } from "./metadata/schema";
-import { remainingDeletionTargets } from "./metadata/clean";
+import {
+  isGpsMetadataField,
+  privacySerialDeletionTags,
+  remainingDeletionTargets,
+} from "./metadata/clean";
 import {
   SemanticFieldKey,
   semanticConflicts,
@@ -936,10 +940,11 @@ export default function Home() {
 
       if (gpsMode === "remove") {
         writeTags["GPS:All"] = "";
-        // GPS may also be mirrored in XMP. Remove only GPS-prefixed XMP tags
-        // actually present in this file, avoiding broad XMP deletion.
+        // WebP and PNG often carry GPS in XMP or EXIF aliases instead of the
+        // GPS IFD. Remove each source field actually found, in addition to the
+        // standard GPS group, without touching ExifTool's derived Composite tags.
         for (const field of metadataFields) {
-          if (field.group === "XMP" && field.tag.startsWith("GPS")) writeTags[field.key] = "";
+          if (isGpsMetadataField(field)) writeTags[field.key] = "";
         }
       } else if (gpsMode === "edit") {
         const latitude = Number(form.latitude);
@@ -960,11 +965,7 @@ export default function Home() {
         writeTags[tag] = "";
       }
       if (cleanupPreset === "privacy") {
-        // ExifTool warns when asked to delete camera-specific serial tags that
-        // do not exist. Delete every serial field actually found instead.
-        for (const field of metadataFields) {
-          if (/serial.?number/i.test(field.tag)) writeTags[field.key] = "";
-        }
+        for (const tag of privacySerialDeletionTags(metadataFields)) writeTags[tag] = "";
       }
       for (const tag of groupDeletes) {
         writeTags[tag] = "";
@@ -992,7 +993,10 @@ export default function Home() {
       const result = await writeMetadataInWorker(
         file,
         writeTags,
-        hasIptcTextWrite ? ["-charset", "IPTC=UTF8"] : [],
+        // Midjourney and other PNG exporters sometimes put UTF-8 text into a
+        // legacy tEXt chunk. The WASM build cannot load its Latin codec; force
+        // UTF-8 as ExifTool's external charset for every write.
+        hasIptcTextWrite ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"] : ["-charset", "UTF8"],
         (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
         },
@@ -1027,7 +1031,7 @@ export default function Home() {
       const verifiedLng = gpsCoordinate(verifiedTags, "Longitude");
       const gpsOk =
         gpsMode === "remove"
-          ? !Object.keys(verifiedTags).some((key) => /^GPS/i.test(key))
+          ? !verifiedMetadataFields.some(isGpsMetadataField)
           : gpsMode === "edit"
             ? Math.abs(Number(verifiedLat) - Number(form.latitude)) < 0.000001 &&
               Math.abs(Number(verifiedLng) - Number(form.longitude)) < 0.000001

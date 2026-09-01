@@ -1,5 +1,40 @@
 import type { MetadataField } from "./schema";
 
+/**
+ * GPS can be stored in the EXIF GPS IFD, or mirrored into XMP. Composite GPS
+ * fields are deliberately excluded because ExifTool derives them from source
+ * metadata rather than storing them in the file.
+ */
+export const isGpsMetadataField = (field: MetadataField): boolean =>
+  field.group === "GPS" ||
+  ((field.group === "EXIF" || field.group === "XMP") && /^GPS/i.test(field.tag));
+
+const WRITABLE_PRIVACY_SERIAL_KEYS = new Set([
+  "EXIF:SerialNumber",
+  "EXIF:CameraSerialNumber",
+  "EXIF:InternalSerialNumber",
+  "EXIF:BodySerialNumber",
+  "EXIF:LensSerialNumber",
+  "XMP-exifEX:LensSerialNumber",
+  "XMP-aux:LensSerialNumber",
+]);
+
+/**
+ * Some XMP serial fields are read-only aliases in ExifTool. Delete the XMP
+ * packet as a group in that case instead of issuing an individual, failing
+ * write. Camera EXIF and recognised lens fields remain narrow deletions.
+ */
+export const privacySerialDeletionTags = (fields: MetadataField[]): string[] => {
+  const tags = new Set<string>();
+  for (const field of fields) {
+    if (!/serial.?number/i.test(field.tag)) continue;
+    if (WRITABLE_PRIVACY_SERIAL_KEYS.has(field.key)) tags.add(field.key);
+    else if (field.group === "XMP") tags.add("XMP:All");
+    else if (field.group === "MakerNotes") tags.add("MakerNotes:All");
+  }
+  return [...tags];
+};
+
 const DELETION_GROUPS: Record<string, MetadataField["group"][]> = {
   "EXIF:All": ["EXIF"],
   "GPS:All": ["GPS"],
@@ -27,7 +62,8 @@ export const remainingDeletionTargets = (
   const remaining: string[] = [];
   for (const tag of deletionTags) {
     const groups = DELETION_GROUPS[tag];
-    if (groups && fields.some((field) => groups.includes(field.group))) remaining.push(tag);
+    if (tag === "GPS:All" && fields.some(isGpsMetadataField)) remaining.push(tag);
+    else if (groups && fields.some((field) => groups.includes(field.group))) remaining.push(tag);
     if (!groups && fields.some((field) => matchesIndividualDeletion(field, tag))) remaining.push(tag);
   }
   return remaining;
