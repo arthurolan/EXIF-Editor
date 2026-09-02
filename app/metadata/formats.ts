@@ -53,24 +53,29 @@ const crc32 = (bytes: Uint8Array): number => {
   return (value ^ 0xffffffff) >>> 0;
 };
 
-const utf8TextInLegacyPngChunk = (data: Uint8Array): { keyword: Uint8Array; text: Uint8Array } | null => {
+const pngTextForITxt = (data: Uint8Array): { keyword: Uint8Array; text: Uint8Array } | null => {
   const separator = data.indexOf(0);
   if (separator < 1) return null;
   const keyword = data.subarray(0, separator);
-  const text = data.subarray(separator + 1);
+  const sourceText = data.subarray(separator + 1);
   try {
-    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(text);
-    return /[^\x00-\x7f]/.test(decoded) ? { keyword, text } : null;
+    // Some generators write UTF-8 directly into tEXt. Preserve these bytes so
+    // the text becomes correct once stored in its UTF-8 iTXt container.
+    new TextDecoder("utf-8", { fatal: true }).decode(sourceText);
+    return { keyword, text: sourceText };
   } catch {
-    return null;
+    // Valid legacy tEXt is Latin-1. Convert it before eliminating the legacy
+    // container so the WASM ExifTool never has to load a Latin codec.
+    const decoded = new TextDecoder("iso-8859-1").decode(sourceText);
+    return { keyword, text: new TextEncoder().encode(decoded) };
   }
 };
 
 /**
- * A few PNG generators put UTF-8 into legacy Latin-1 tEXt chunks. ExifTool's
- * browser WASM runtime cannot decode that malformed combination. Re-encode
- * only those chunks as standards-compliant UTF-8 iTXt; IDAT bytes are copied
- * byte-for-byte, so the image itself is unchanged.
+ * ExifTool's browser WASM runtime does not include the Latin codec used for
+ * PNG's legacy tEXt chunks. Re-encode every tEXt chunk as standards-compliant
+ * UTF-8 iTXt before writing. This also repairs generators that put UTF-8 into
+ * a legacy chunk. IDAT bytes are copied byte-for-byte, so pixels are unchanged.
  */
 export const normalizePngUtf8TextChunks = (buffer: ArrayBuffer): Uint8Array | null => {
   const source = new Uint8Array(buffer);
@@ -86,14 +91,14 @@ export const normalizePngUtf8TextChunks = (buffer: ArrayBuffer): Uint8Array | nu
     if (end > source.length) return null;
     const type = String.fromCharCode(...source.subarray(offset + 4, offset + 8));
     const data = source.subarray(offset + 8, offset + 8 + length);
-    const legacyText = type === "tEXt" ? utf8TextInLegacyPngChunk(data) : null;
-    if (!legacyText) {
+    const pngText = type === "tEXt" ? pngTextForITxt(data) : null;
+    if (!pngText) {
       parts.push(source.subarray(offset, end));
     } else {
       const iTxtData = concatBytes([
-        legacyText.keyword,
+        pngText.keyword,
         new Uint8Array([0, 0, 0, 0, 0]),
-        legacyText.text,
+        pngText.text,
       ]);
       const typeBytes = new TextEncoder().encode("iTXt");
       const checksum = writeBigEndianUint32(crc32(concatBytes([typeBytes, iTxtData])));

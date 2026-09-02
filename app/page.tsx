@@ -1064,9 +1064,11 @@ export default function Home() {
           semanticValueFromFields(verifiedMetadataFields, "description") === form.description);
       const remainingDeletionTags = remainingDeletionTargets(
         verifiedMetadataFields,
-        Object.entries(writeTags)
-          .filter(([, value]) => value === "")
-          .map(([tag]) => tag),
+        [
+          ...CLEANUP_PRESETS[cleanupPreset].tags,
+          ...privacySerialDeletionTags(metadataFields),
+          ...groupDeletes,
+        ],
       );
       const editableFieldsOk =
         semanticFieldsOk &&

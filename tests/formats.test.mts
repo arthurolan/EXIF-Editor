@@ -39,10 +39,11 @@ test("uses only PNG IDAT chunks for image-data verification", () => {
   assert.deepEqual([...imageDataPayload(png, "png")], [73, 68, 65, 84, 1, 2, 73, 68, 65, 84, 4]);
 });
 
-test("converts malformed UTF-8 PNG tEXt to iTXt without changing IDAT", () => {
+test("converts every PNG tEXt chunk to iTXt without changing IDAT", () => {
   const source = bytes(
     137, 80, 78, 71, 13, 10, 26, 10,
     ...pngChunk("tEXt", new TextEncoder().encode("Description\0中文提示词")),
+    ...pngChunk("tEXt", new TextEncoder().encode("Author\0eskimolan")),
     ...pngChunk("IDAT", new Uint8Array([1, 2, 3])),
     ...pngChunk("IEND", new Uint8Array()),
   );
@@ -52,7 +53,7 @@ test("converts malformed UTF-8 PNG tEXt to iTXt without changing IDAT", () => {
     [...imageDataPayload(normalized.slice().buffer as ArrayBuffer, "png")],
     [73, 68, 65, 84, 1, 2, 3],
   );
-  assert.equal(new TextDecoder().decode(normalized).includes("iTXt"), true);
+  assert.equal((new TextDecoder().decode(normalized).match(/iTXt/g) ?? []).length, 2);
 });
 
 test("uses WebP bitstream chunks while excluding metadata and VP8X flags", () => {
