@@ -9,6 +9,14 @@ export const isGpsMetadataField = (field: MetadataField): boolean =>
   field.group === "GPS" ||
   ((field.group === "EXIF" || field.group === "XMP") && /^GPS/i.test(field.tag));
 
+/**
+ * GPSVersionID is a format marker, not a location. Some PNG and WebP writers
+ * retain this empty structural tag after deleting the GPS IFD. It must not
+ * make a successful location removal look like a privacy failure.
+ */
+export const isGpsLocationMetadataField = (field: MetadataField): boolean =>
+  isGpsMetadataField(field) && field.tag.toLowerCase() !== "gpsversionid";
+
 const WRITABLE_PRIVACY_SERIAL_KEYS = new Set([
   "EXIF:SerialNumber",
   "EXIF:CameraSerialNumber",

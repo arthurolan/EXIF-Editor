@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   deletedMetadataIsAbsent,
   isGpsMetadataField,
+  isGpsLocationMetadataField,
   privacySerialDeletionTags,
   remainingDeletionTargets,
 } from "../app/metadata/clean";
@@ -110,6 +111,17 @@ test("removes and verifies GPS from EXIF and XMP, but ignores derived Composite 
     ["EXIF:GPSLongitude", "GPS:GPSLatitude", "XMP-exif:GPSAltitude"],
   );
   assert.deepEqual(remainingDeletionTargets(fields, ["GPS:All"]), ["GPS:All"]);
+});
+
+test("does not treat a retained GPS version marker as a retained location", () => {
+  const fields = normalizeExifToolFields({
+    "GPS:GPSVersionID": "2.3.0.0",
+    "GPS:GPSLatitude": "31.2",
+  });
+  assert.deepEqual(
+    fields.filter(isGpsLocationMetadataField).map((field) => field.key),
+    ["GPS:GPSLatitude"],
+  );
 });
 
 test("uses safe privacy serial deletes and falls back to group deletion for read-only XMP", () => {

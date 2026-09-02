@@ -43,6 +43,7 @@ import {
 } from "./metadata/schema";
 import {
   isGpsMetadataField,
+  isGpsLocationMetadataField,
   privacySerialDeletionTags,
   remainingDeletionTargets,
 } from "./metadata/clean";
@@ -1033,7 +1034,7 @@ export default function Home() {
       const verifiedLng = gpsCoordinate(verifiedTags, "Longitude");
       const gpsOk =
         gpsMode === "remove"
-          ? !verifiedMetadataFields.some(isGpsMetadataField)
+          ? !verifiedMetadataFields.some(isGpsLocationMetadataField)
           : gpsMode === "edit"
             ? Math.abs(Number(verifiedLat) - Number(form.latitude)) < 0.000001 &&
               Math.abs(Number(verifiedLng) - Number(form.longitude)) < 0.000001
