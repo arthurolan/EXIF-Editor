@@ -124,6 +124,16 @@ test("does not treat a retained GPS version marker as a retained location", () =
   );
 });
 
+test("does not fail GPS cleanup verification on a retained GPS version marker", () => {
+  const fields = normalizeExifToolFields({
+    "File:FileType": "WEBP",
+    "GPS:GPSVersionID": "2.3.0.0",
+  });
+
+  assert.deepEqual(remainingDeletionTargets(fields, ["GPS:All"]), []);
+  assert.equal(deletedMetadataIsAbsent(fields, ["GPS:All"]), true);
+});
+
 test("uses safe privacy serial deletes and falls back to group deletion for read-only XMP", () => {
   const fields = normalizeExifToolFields({
     "EXIF:SerialNumber": "camera-123",

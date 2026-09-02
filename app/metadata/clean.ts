@@ -72,8 +72,11 @@ export const remainingDeletionTargets = (
   const remaining: string[] = [];
   for (const tag of deletionTags) {
     const groups = DELETION_GROUPS[tag];
-    if (tag === "GPS:All" && fields.some(isGpsMetadataField)) remaining.push(tag);
-    else if (groups && fields.some((field) => groups.includes(field.group))) remaining.push(tag);
+    if (tag === "GPS:All") {
+      if (fields.some(isGpsLocationMetadataField)) remaining.push(tag);
+      continue;
+    }
+    if (groups && fields.some((field) => groups.includes(field.group))) remaining.push(tag);
     if (!groups && fields.some((field) => matchesIndividualDeletion(field, tag))) remaining.push(tag);
   }
   return remaining;
