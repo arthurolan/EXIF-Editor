@@ -42,7 +42,7 @@ import {
   normalizeExifToolFields,
 } from "./metadata/schema";
 import {
-  isGpsMetadataField,
+  gpsDeletionTags,
   isGpsLocationMetadataField,
   privacySerialDeletionTagsForPreset,
   remainingDeletionTargets,
@@ -940,14 +940,19 @@ export default function Home() {
         Object.assign(writeTags, semanticWriteTags("description", form.description));
       }
 
-      if (gpsMode === "remove") {
-        writeTags["GPS:All"] = "";
+      const cleanupDeletionTargets = [...CLEANUP_PRESETS[cleanupPreset].tags];
+      const requestedDeletionTargets = [
+        ...cleanupDeletionTargets,
+        ...groupDeletes,
+      ];
+      const shouldDeleteGps =
+        gpsMode === "remove" || requestedDeletionTargets.includes("GPS:All");
+
+      if (shouldDeleteGps) {
         // WebP and PNG often carry GPS in XMP or EXIF aliases instead of the
         // GPS IFD. Remove each source field actually found, in addition to the
         // standard GPS group, without touching ExifTool's derived Composite tags.
-        for (const field of metadataFields) {
-          if (isGpsMetadataField(field)) writeTags[field.key] = "";
-        }
+        for (const tag of gpsDeletionTags(metadataFields)) writeTags[tag] = "";
       } else if (gpsMode === "edit") {
         const latitude = Number(form.latitude);
         const longitude = Number(form.longitude);
@@ -963,7 +968,7 @@ export default function Home() {
           if (form.direction) writeTags.GPSImgDirectionRef = "T";
         }
       }
-      for (const tag of CLEANUP_PRESETS[cleanupPreset].tags) {
+      for (const tag of cleanupDeletionTargets) {
         writeTags[tag] = "";
       }
       const privacySerialDeletionTargets = privacySerialDeletionTagsForPreset(
@@ -1035,7 +1040,7 @@ export default function Home() {
       const verifiedLat = gpsCoordinate(verifiedTags, "Latitude");
       const verifiedLng = gpsCoordinate(verifiedTags, "Longitude");
       const gpsOk =
-        gpsMode === "remove"
+        shouldDeleteGps
           ? !verifiedMetadataFields.some(isGpsLocationMetadataField)
           : gpsMode === "edit"
             ? Math.abs(Number(verifiedLat) - Number(form.latitude)) < 0.000001 &&

@@ -17,6 +17,11 @@ export const isGpsMetadataField = (field: MetadataField): boolean =>
 export const isGpsLocationMetadataField = (field: MetadataField): boolean =>
   isGpsMetadataField(field) && field.tag.toLowerCase() !== "gpsversionid";
 
+export const gpsDeletionTags = (fields: MetadataField[]): string[] => [
+  "GPS:All",
+  ...fields.filter(isGpsMetadataField).map((field) => field.key),
+];
+
 const WRITABLE_PRIVACY_SERIAL_KEYS = new Set([
   "EXIF:SerialNumber",
   "EXIF:CameraSerialNumber",

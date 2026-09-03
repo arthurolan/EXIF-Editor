@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deletedMetadataIsAbsent,
+  gpsDeletionTags,
   isGpsMetadataField,
   isGpsLocationMetadataField,
   privacySerialDeletionTags,
@@ -112,6 +113,24 @@ test("removes and verifies GPS from EXIF and XMP, but ignores derived Composite 
     ["EXIF:GPSLongitude", "GPS:GPSLatitude", "XMP-exif:GPSAltitude"],
   );
   assert.deepEqual(remainingDeletionTargets(fields, ["GPS:All"]), ["GPS:All"]);
+});
+
+test("expands GPS deletion to XMP and EXIF GPS aliases for non-JPEG containers", () => {
+  const fields = normalizeExifToolFields({
+    "GPS:GPSLatitude": "31.2",
+    "GPS:GPSVersionID": "2.3.0.0",
+    "EXIF:GPSLongitude": "121.5",
+    "XMP-exif:GPSLatitude": "31.2",
+    "Composite:GPSPosition": "31.2, 121.5",
+  });
+
+  assert.deepEqual(gpsDeletionTags(fields), [
+    "GPS:All",
+    "EXIF:GPSLongitude",
+    "GPS:GPSLatitude",
+    "GPS:GPSVersionID",
+    "XMP-exif:GPSLatitude",
+  ]);
 });
 
 test("does not treat a retained GPS version marker as a retained location", () => {
