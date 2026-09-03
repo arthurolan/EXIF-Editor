@@ -1,4 +1,4 @@
-import type { MetadataField } from "./schema";
+import type { CleanupPreset, MetadataField } from "./schema";
 
 /**
  * GPS can be stored in the EXIF GPS IFD, or mirrored into XMP. Composite GPS
@@ -42,6 +42,11 @@ export const privacySerialDeletionTags = (fields: MetadataField[]): string[] => 
   }
   return [...tags];
 };
+
+export const privacySerialDeletionTagsForPreset = (
+  fields: MetadataField[],
+  cleanupPreset: CleanupPreset,
+): string[] => (cleanupPreset === "privacy" ? privacySerialDeletionTags(fields) : []);
 
 const DELETION_GROUPS: Record<string, MetadataField["group"][]> = {
   "EXIF:All": ["EXIF"],

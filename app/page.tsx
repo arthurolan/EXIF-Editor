@@ -44,7 +44,7 @@ import {
 import {
   isGpsMetadataField,
   isGpsLocationMetadataField,
-  privacySerialDeletionTags,
+  privacySerialDeletionTagsForPreset,
   remainingDeletionTargets,
 } from "./metadata/clean";
 import {
@@ -966,9 +966,11 @@ export default function Home() {
       for (const tag of CLEANUP_PRESETS[cleanupPreset].tags) {
         writeTags[tag] = "";
       }
-      if (cleanupPreset === "privacy") {
-        for (const tag of privacySerialDeletionTags(metadataFields)) writeTags[tag] = "";
-      }
+      const privacySerialDeletionTargets = privacySerialDeletionTagsForPreset(
+        metadataFields,
+        cleanupPreset,
+      );
+      for (const tag of privacySerialDeletionTargets) writeTags[tag] = "";
       for (const tag of groupDeletes) {
         writeTags[tag] = "";
       }
@@ -1067,7 +1069,7 @@ export default function Home() {
         verifiedMetadataFields,
         [
           ...CLEANUP_PRESETS[cleanupPreset].tags,
-          ...privacySerialDeletionTags(metadataFields),
+          ...privacySerialDeletionTargets,
           ...groupDeletes,
         ],
       );

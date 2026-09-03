@@ -6,6 +6,7 @@ import {
   isGpsMetadataField,
   isGpsLocationMetadataField,
   privacySerialDeletionTags,
+  privacySerialDeletionTagsForPreset,
   remainingDeletionTargets,
 } from "../app/metadata/clean";
 import { ADVANCED_DELETE_TAGS, normalizeExifToolFields } from "../app/metadata/schema";
@@ -143,6 +144,19 @@ test("uses safe privacy serial deletes and falls back to group deletion for read
   assert.deepEqual(privacySerialDeletionTags(fields), [
     "EXIF:SerialNumber",
     "MakerNotes:All",
+    "XMP:All",
+  ]);
+});
+
+test("checks privacy serial deletions only for the privacy cleanup preset", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:SerialNumber": "camera-123",
+    "XMP-exif:SerialNumber": "read-only-alias",
+  });
+
+  assert.deepEqual(privacySerialDeletionTagsForPreset(fields, "none"), []);
+  assert.deepEqual(privacySerialDeletionTagsForPreset(fields, "privacy"), [
+    "EXIF:SerialNumber",
     "XMP:All",
   ]);
 });
