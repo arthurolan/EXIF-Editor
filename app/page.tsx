@@ -1711,7 +1711,7 @@ export default function Home() {
         <p className="footer-credit">
           <span>© 2026 E.O创作</span>
           <span aria-hidden="true">·</span>
-          <a href="mailto:arthurolan99@gmail.com">arthurolan99@gmail.com</a>
+          <a href="mailto:eo@eomoment.com">eo@eomoment.com</a>
         </p>
       </footer>
 
