@@ -1000,13 +1000,26 @@ export default function Home() {
       // Suppress only ExifTool's minor warnings; real warnings and errors still
       // flow through the wrapper and block export.
       const writeInput = await fileForMetadataWrite(file, format.format);
+      const removesIccProfile = requestedDeletionTargets.some(
+        (tag) => tag === "All" || tag === "ICC_Profile:All",
+      );
       const result = await writeMetadataInWorker(
         writeInput,
         writeTags,
         // Midjourney and other PNG exporters sometimes put UTF-8 text into a
         // legacy tEXt chunk. The WASM build cannot load its Latin codec; force
         // UTF-8 as ExifTool's external charset for every write.
-        hasIptcTextWrite ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"] : ["-charset", "UTF8"],
+        [
+          ...(hasIptcTextWrite
+            ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"]
+            : ["-charset", "UTF8"]),
+          // ExifTool emits "ICC_Profile deleted" on stderr even when it
+          // successfully creates a valid metadata-only output. The WASM
+          // wrapper treats any stderr as a failure, so silence this expected
+          // notice only when the user explicitly requested ICC removal. The
+          // output is still re-read and its image data is verified below.
+          ...(removesIccProfile ? ["-q", "-q"] : []),
+        ],
         (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
         },

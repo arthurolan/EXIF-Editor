@@ -126,15 +126,25 @@ const jpegImageData = (bytes: Uint8Array): Uint8Array => {
       index += 1;
       continue;
     }
-    const marker = bytes[index + 1];
-    if (marker === 0xda) return bytes.subarray(index);
-    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
-      index += 2;
+    // JPEG permits any number of 0xff fill bytes before a marker. Photoshop
+    // commonly writes these in APP segments. Treating a fill byte as a marker
+    // makes the fallback return the entire file, so metadata-only changes are
+    // incorrectly reported as changed image data.
+    let markerIndex = index + 1;
+    while (bytes[markerIndex] === 0xff) markerIndex += 1;
+    const marker = bytes[markerIndex];
+    if (marker === undefined || marker === 0x00) {
+      index = markerIndex + 1;
       continue;
     }
-    const length = (bytes[index + 2] << 8) | bytes[index + 3];
+    if (marker === 0xda) return bytes.subarray(index);
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+      index = markerIndex + 1;
+      continue;
+    }
+    const length = (bytes[markerIndex + 1] << 8) | bytes[markerIndex + 2];
     if (length < 2) break;
-    index += 2 + length;
+    index = markerIndex + 1 + length;
   }
   return bytes;
 };
