@@ -1136,10 +1136,10 @@ export default function Home() {
       );
       const editableFieldsOk =
         semanticFieldsOk &&
-        (form.make === original.make || firstTag(verifiedTags, ["Make"]) === form.make) &&
-        (form.model === original.model || firstTag(verifiedTags, ["Model"]) === form.model) &&
-        (form.lensModel === original.lensModel ||
-          firstTag(verifiedTags, ["LensModel", "Lens"]) === form.lensModel) &&
+        // Semantic fields above are verified from ExifTool's namespaced tags.
+        // Do not re-check them with ExifReader's unqualified names: PNG tEXt
+        // chunks may use names such as "Artist" or "Model" too, and can retain
+        // an old value even though the actual EXIF/XMP/IPTC write succeeded.
         (form.aperture === original.aperture ||
           sameNumericValue(
             numericTag(verifiedTags, ["FNumber", "ApertureValue"]),
@@ -1157,18 +1157,7 @@ export default function Home() {
             form.iso,
           )) &&
         (form.focalLength === original.focalLength ||
-          sameNumericValue(numericTag(verifiedTags, ["FocalLength"]), form.focalLength)) &&
-        (form.dateTime === original.dateTime ||
-          exifDateToInput(
-            firstTag(verifiedTags, ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]),
-          ) === form.dateTime) &&
-        (form.artist === original.artist ||
-          firstTag(verifiedTags, ["Artist", "Author", "XPAuthor"]) === form.artist) &&
-        (form.copyright === original.copyright ||
-          firstTag(verifiedTags, ["Copyright"]) === form.copyright) &&
-        (form.description === original.description ||
-          firstTag(verifiedTags, ["ImageDescription", "Description", "Caption-Abstract"]) ===
-            form.description);
+          sameNumericValue(numericTag(verifiedTags, ["FocalLength"]), form.focalLength));
 
       const originalDigest = await imageDataDigest(file, format.format);
       const nextDigest = await imageDataDigest(outputFile, format.format);

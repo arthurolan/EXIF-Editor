@@ -67,6 +67,15 @@ test("detects semantic conflicts and uses the first mapped value", () => {
   ]);
 });
 
+test("uses the namespaced EXIF author instead of an unrelated PNG text field", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:Artist": "Updated author",
+    "PNG:Artist": "Old PNG text author",
+  });
+
+  assert.equal(semanticValueFromFields(fields, "artist"), "Updated author");
+});
+
 test("writes semantic fields to every compatible tag and splits keywords", () => {
   assert.deepEqual(semanticWriteTags("artist", "Alice"), {
     "EXIF:Artist": "Alice",
