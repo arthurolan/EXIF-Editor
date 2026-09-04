@@ -139,7 +139,17 @@ const jpegImageData = (bytes: Uint8Array): Uint8Array => {
     }
     // Start at the canonical marker prefix, excluding any optional fill bytes.
     // Writers may normalize these bytes while leaving the encoded scan intact.
-    if (marker === 0xda) return bytes.subarray(markerIndex - 1);
+    // A JPEG may also carry a second image or vendor data after its first EOI;
+    // that is not part of the primary image stream being exported.
+    if (marker === 0xda) {
+      const scanStart = markerIndex - 1;
+      for (let offset = markerIndex + 1; offset + 1 < bytes.length; offset += 1) {
+        if (bytes[offset] === 0xff && bytes[offset + 1] === 0xd9) {
+          return bytes.subarray(scanStart, offset + 2);
+        }
+      }
+      return bytes.subarray(scanStart);
+    }
     if (
       marker === 0x01 ||
       marker === 0xd8 ||
