@@ -137,8 +137,15 @@ const jpegImageData = (bytes: Uint8Array): Uint8Array => {
       index = markerIndex + 1;
       continue;
     }
-    if (marker === 0xda) return bytes.subarray(index);
-    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+    // Start at the canonical marker prefix, excluding any optional fill bytes.
+    // Writers may normalize these bytes while leaving the encoded scan intact.
+    if (marker === 0xda) return bytes.subarray(markerIndex - 1);
+    if (
+      marker === 0x01 ||
+      marker === 0xd8 ||
+      marker === 0xd9 ||
+      (marker >= 0xd0 && marker <= 0xd7)
+    ) {
       index = markerIndex + 1;
       continue;
     }

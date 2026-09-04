@@ -49,6 +49,15 @@ test("ignores JPEG metadata when marker fill bytes precede a segment", () => {
   assert.deepEqual([...imageDataPayload(jpeg, "jpeg")], [0xff, 0xda, 0, 0, 2, 3, 4, 0xff, 0xd9]);
 });
 
+test("ignores optional fill bytes immediately before a JPEG scan", () => {
+  const jpeg = bytes(
+    0xff, 0xd8,
+    0xff, 0xff, 0xda, 0, 2,
+    3, 4, 0xff, 0xd9,
+  );
+  assert.deepEqual([...imageDataPayload(jpeg, "jpeg")], [0xff, 0xda, 0, 2, 3, 4, 0xff, 0xd9]);
+});
+
 test("converts every PNG tEXt chunk to iTXt without changing IDAT", () => {
   const source = bytes(
     137, 80, 78, 71, 13, 10, 26, 10,

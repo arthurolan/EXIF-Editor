@@ -154,6 +154,13 @@ test("does not fail GPS cleanup verification on a retained GPS version marker", 
   assert.equal(deletedMetadataIsAbsent(fields, ["GPS:All"]), true);
 });
 
+test("does not treat a retained GPS IFD pointer as a location", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:GPSInfo": 1234,
+  });
+  assert.equal(isGpsLocationMetadataField(fields[0]), false);
+});
+
 test("uses safe privacy serial deletes and falls back to group deletion for read-only XMP", () => {
   const fields = normalizeExifToolFields({
     "EXIF:SerialNumber": "camera-123",
