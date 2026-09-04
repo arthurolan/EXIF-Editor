@@ -143,6 +143,8 @@ const COPY = {
     conflictHint: "检测 EXIF、XMP、IPTC 中语义相同但值不一致的字段。",
     noConflicts: "未检测到常用语义字段冲突",
     useThisValue: "采用此值",
+    valueApplied: "已采用",
+    conflictSync: "冲突同步",
     allTagsBrowser: "全部标签浏览器",
     allTagsHint: "按元数据组查看，MakerNotes 默认只读。",
     detectedGroups: "检测到的元数据组",
@@ -305,6 +307,8 @@ const COPY = {
     conflictHint: "Detects semantic mismatches across EXIF, XMP, and IPTC.",
     noConflicts: "No common semantic conflicts detected",
     useThisValue: "Use this value",
+    valueApplied: "Applied",
+    conflictSync: "Conflict sync",
     allTagsBrowser: "All tags browser",
     allTagsHint: "Browse by metadata group. MakerNotes stay read-only by default.",
     detectedGroups: "Detected metadata groups",
@@ -553,6 +557,9 @@ export default function Home() {
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewAvailable, setPreviewAvailable] = useState(false);
   const [metadataFields, setMetadataFields] = useState<MetadataField[]>([]);
+  const [resolvedConflicts, setResolvedConflicts] = useState<
+    Partial<Record<SemanticFieldKey, string>>
+  >({});
   const [original, setOriginal] = useState<EditableData>(EMPTY_DATA);
   const [form, setForm] = useState<EditableData>(EMPTY_DATA);
   const [gpsMode, setGpsMode] = useState<GpsMode>("keep");
@@ -596,6 +603,13 @@ export default function Home() {
     setStatus("");
   };
 
+  const resolveConflict = (key: SemanticFieldKey, value: string) => {
+    assign(key, value);
+    // A selected value must be written back to every compatible tag even when
+    // it matches the value initially chosen for the form.
+    setResolvedConflicts((current) => ({ ...current, [key]: value }));
+  };
+
   const changeLanguage = (nextLanguage: Language) => {
     setLanguage(nextLanguage);
     window.localStorage.setItem("yingke-exif-language", nextLanguage);
@@ -611,6 +625,7 @@ export default function Home() {
     setPixelVerified(false);
     setReviewOpen(false);
     setMetadataFields([]);
+    setResolvedConflicts({});
     setPreviewAvailable(false);
 
     const format = imageFormatFromFile(selected);
@@ -654,6 +669,7 @@ export default function Home() {
       });
       setPreviewAvailable(Boolean(dimensions));
       setMetadataFields(nextMetadataFields);
+      setResolvedConflicts({});
 
       const latitude = gpsCoordinate(loaded, "Latitude");
       const longitude = gpsCoordinate(loaded, "Longitude");
@@ -743,6 +759,7 @@ export default function Home() {
 
   const reset = () => {
     setForm(original);
+    setResolvedConflicts({});
     setGpsMode(original.latitude && original.longitude ? "keep" : "edit");
     setCleanupPreset("none");
     setGroupDeletes([]);
@@ -762,6 +779,25 @@ export default function Home() {
     positiveExposure(form.shutterSpeed) &&
     (form.iso === "" || (/^\d+$/.test(form.iso) && Number(form.iso) > 0)) &&
     positiveNumber(form.focalLength);
+
+  const semanticLabels = useMemo<Record<SemanticFieldKey, string>>(
+    () => ({
+      artist: t.artist,
+      copyright: t.copyright,
+      title: t.title,
+      description: t.description,
+      keywords: t.keywords,
+      dateTime: t.dateTaken,
+      make: t.make,
+      model: t.model,
+      lensModel: t.lensModel,
+      city: t.city,
+      country: t.country,
+    }),
+    [t],
+  );
+  const shouldWriteSemanticField = (key: SemanticFieldKey): boolean =>
+    form[key] !== original[key] || key in resolvedConflicts;
 
   const diffs = useMemo<DiffItem[]>(() => {
     const items: DiffItem[] = [];
@@ -786,6 +822,16 @@ export default function Home() {
     push(t.city, original.city, form.city);
     push(t.country, original.country, form.country);
     push(t.description, original.description, form.description);
+
+    for (const key of Object.keys(resolvedConflicts) as SemanticFieldKey[]) {
+      if (form[key] === original[key]) {
+        items.push({
+          label: `${semanticLabels[key]} · ${t.conflictSync}`,
+          before: t.unset,
+          after: form[key],
+        });
+      }
+    }
 
     if (gpsMode === "remove" && (original.latitude || original.longitude || original.altitude)) {
       items.push({
@@ -831,24 +877,21 @@ export default function Home() {
       });
     }
     return items;
-  }, [cleanupPreset, form, gpsMode, groupDeletes, original, t]);
+  }, [
+    cleanupPreset,
+    form,
+    gpsMode,
+    groupDeletes,
+    original,
+    resolvedConflicts,
+    semanticLabels,
+    t,
+  ]);
 
-  const conflicts = useMemo(() => {
-    const semanticLabels: Record<SemanticFieldKey, string> = {
-      artist: t.artist,
-      copyright: t.copyright,
-      title: t.title,
-      description: t.description,
-      keywords: t.keywords,
-      dateTime: t.dateTaken,
-      make: t.make,
-      model: t.model,
-      lensModel: t.lensModel,
-      city: t.city,
-      country: t.country,
-    };
-    return semanticConflicts(metadataFields, semanticLabels);
-  }, [metadataFields, t]);
+  const conflicts = useMemo(
+    () => semanticConflicts(metadataFields, semanticLabels),
+    [metadataFields, semanticLabels],
+  );
 
   const groupCounts = useMemo(() => {
     const counts = new globalThis.Map<string, number>();
@@ -899,13 +942,13 @@ export default function Home() {
 
     try {
       const writeTags: Record<string, string | number | boolean | (string | number | boolean)[]> = {};
-      if (form.make !== original.make) {
+      if (shouldWriteSemanticField("make")) {
         Object.assign(writeTags, semanticWriteTags("make", form.make));
       }
-      if (form.model !== original.model) {
+      if (shouldWriteSemanticField("model")) {
         Object.assign(writeTags, semanticWriteTags("model", form.model));
       }
-      if (form.lensModel !== original.lensModel) {
+      if (shouldWriteSemanticField("lensModel")) {
         Object.assign(writeTags, semanticWriteTags("lensModel", form.lensModel));
       }
       if (form.aperture !== original.aperture) {
@@ -915,28 +958,28 @@ export default function Home() {
       if (form.shutterSpeed !== original.shutterSpeed) writeTags.ExposureTime = form.shutterSpeed;
       if (form.iso !== original.iso) writeTags.ISO = form.iso;
       if (form.focalLength !== original.focalLength) writeTags.FocalLength = form.focalLength;
-      if (form.dateTime !== original.dateTime) {
+      if (shouldWriteSemanticField("dateTime")) {
         Object.assign(writeTags, semanticWriteTags("dateTime", inputDateToExif(form.dateTime)));
       }
-      if (form.title !== original.title) {
+      if (shouldWriteSemanticField("title")) {
         Object.assign(writeTags, semanticWriteTags("title", form.title));
       }
-      if (form.artist !== original.artist) {
+      if (shouldWriteSemanticField("artist")) {
         Object.assign(writeTags, semanticWriteTags("artist", form.artist));
       }
-      if (form.copyright !== original.copyright) {
+      if (shouldWriteSemanticField("copyright")) {
         Object.assign(writeTags, semanticWriteTags("copyright", form.copyright));
       }
-      if (form.keywords !== original.keywords) {
+      if (shouldWriteSemanticField("keywords")) {
         Object.assign(writeTags, semanticWriteTags("keywords", form.keywords));
       }
-      if (form.city !== original.city) {
+      if (shouldWriteSemanticField("city")) {
         Object.assign(writeTags, semanticWriteTags("city", form.city));
       }
-      if (form.country !== original.country) {
+      if (shouldWriteSemanticField("country")) {
         Object.assign(writeTags, semanticWriteTags("country", form.country));
       }
-      if (form.description !== original.description) {
+      if (shouldWriteSemanticField("description")) {
         Object.assign(writeTags, semanticWriteTags("description", form.description));
       }
 
@@ -1060,28 +1103,28 @@ export default function Home() {
               Math.abs(Number(verifiedLng) - Number(form.longitude)) < 0.000001
             : true;
       const semanticFieldsOk =
-        (form.make === original.make ||
+        (!shouldWriteSemanticField("make") ||
           semanticValueFromFields(verifiedMetadataFields, "make") === form.make) &&
-        (form.model === original.model ||
+        (!shouldWriteSemanticField("model") ||
           semanticValueFromFields(verifiedMetadataFields, "model") === form.model) &&
-        (form.lensModel === original.lensModel ||
+        (!shouldWriteSemanticField("lensModel") ||
           semanticValueFromFields(verifiedMetadataFields, "lensModel") === form.lensModel) &&
-        (form.dateTime === original.dateTime ||
+        (!shouldWriteSemanticField("dateTime") ||
           exifDateToInput(semanticValueFromFields(verifiedMetadataFields, "dateTime")) ===
             form.dateTime) &&
-        (form.title === original.title ||
+        (!shouldWriteSemanticField("title") ||
           semanticValueFromFields(verifiedMetadataFields, "title") === form.title) &&
-        (form.artist === original.artist ||
+        (!shouldWriteSemanticField("artist") ||
           semanticValueFromFields(verifiedMetadataFields, "artist") === form.artist) &&
-        (form.copyright === original.copyright ||
+        (!shouldWriteSemanticField("copyright") ||
           semanticValueFromFields(verifiedMetadataFields, "copyright") === form.copyright) &&
-        (form.keywords === original.keywords ||
+        (!shouldWriteSemanticField("keywords") ||
           semanticValueFromFields(verifiedMetadataFields, "keywords") === form.keywords) &&
-        (form.city === original.city ||
+        (!shouldWriteSemanticField("city") ||
           semanticValueFromFields(verifiedMetadataFields, "city") === form.city) &&
-        (form.country === original.country ||
+        (!shouldWriteSemanticField("country") ||
           semanticValueFromFields(verifiedMetadataFields, "country") === form.country) &&
-        (form.description === original.description ||
+        (!shouldWriteSemanticField("description") ||
           semanticValueFromFields(verifiedMetadataFields, "description") === form.description);
       const remainingDeletionTags = remainingDeletionTargets(
         verifiedMetadataFields,
@@ -1533,11 +1576,21 @@ export default function Home() {
                             <button
                               type="button"
                               key={`${conflict.key}-${item.tag}-${item.value}`}
-                              onClick={() => assign(conflict.key, item.value)}
+                              className={
+                                resolvedConflicts[conflict.key] === item.value
+                                  ? "is-selected"
+                                  : undefined
+                              }
+                              aria-pressed={resolvedConflicts[conflict.key] === item.value}
+                              onClick={() => resolveConflict(conflict.key, item.value)}
                             >
                               <span>{item.tag}</span>
                               <b>{item.value}</b>
-                              <small>{t.useThisValue}</small>
+                              <small>
+                                {resolvedConflicts[conflict.key] === item.value
+                                  ? t.valueApplied
+                                  : t.useThisValue}
+                              </small>
                             </button>
                           ))}
                         </article>
