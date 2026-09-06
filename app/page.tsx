@@ -27,6 +27,7 @@ import {
 import dynamic from "next/dynamic";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { outputNameFor } from "./export-delivery.mjs";
+import { BatchWorkspace } from "./batch-workspace";
 import {
   imageDataDigest,
   imageFormatFromFile,
@@ -639,6 +640,7 @@ export default function Home() {
   const [verified, setVerified] = useState(false);
   const [pixelVerified, setPixelVerified] = useState(false);
   const [c2paDetected, setC2paDetected] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
   const t = COPY[language];
 
   useEffect(() => {
@@ -1361,7 +1363,9 @@ export default function Home() {
       </section>
 
       <section className="workspace" aria-label={t.workspaceLabel}>
-        {!hasFile ? (
+        {!hasFile && batchMode ? (
+          <BatchWorkspace language={language} onClose={() => setBatchMode(false)} />
+        ) : !hasFile ? (
           <div
             className={`dropzone ${dragging ? "is-dragging" : ""}`}
             onDragEnter={onDragEnter}
@@ -1390,6 +1394,9 @@ export default function Home() {
             <button className="primary-button select-button" onClick={() => inputRef.current?.click()} disabled={busy}>
               {busy ? <RefreshCw className="spin" size={18} /> : <ImagePlus size={18} />}
               {busy ? t.reading : t.choosePhoto}
+            </button>
+            <button className="batch-entry-button" type="button" onClick={() => setBatchMode(true)} disabled={busy}>
+              <ListChecks size={16} />{language === "zh" ? "批量隐私处理" : "Batch privacy processing"}
             </button>
             <div className="drop-meta">
               <span>JPEG / PNG / WebP / TIFF / HEIC</span>

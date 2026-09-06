@@ -16,6 +16,7 @@ import {
   semanticValueFromFields,
   semanticWriteTags,
 } from "../app/metadata/semantic";
+import { batchDeletionTags } from "../app/batch-processor";
 
 const labels = {
   artist: "Artist",
@@ -225,6 +226,29 @@ test("checks privacy serial deletions only for the privacy cleanup preset", () =
   assert.deepEqual(privacySerialDeletionTagsForPreset(fields, "privacy"), [
     "EXIF:SerialNumber",
     "XMP:All",
+  ]);
+});
+
+test("builds isolated batch deletion operations without dropping XMP GPS aliases", () => {
+  const fields = normalizeExifToolFields({
+    "GPS:GPSLatitude": "31.2",
+    "XMP-exif:GPSLongitude": "121.5",
+    "EXIF:SerialNumber": "camera-123",
+  });
+  assert.deepEqual(batchDeletionTags(fields, "removeGps"), [
+    "GPS:All",
+    "GPS:GPSLatitude",
+    "XMP-exif:GPSLongitude",
+  ]);
+  assert.deepEqual(batchDeletionTags(fields, "privacy"), [
+    "GPS:All",
+    "GPS:GPSLatitude",
+    "XMP-exif:GPSLongitude",
+    "Software",
+    "ProcessingSoftware",
+    "ThumbnailImage",
+    "PreviewImage",
+    "EXIF:SerialNumber",
   ]);
 });
 
