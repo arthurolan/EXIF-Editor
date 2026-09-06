@@ -114,7 +114,7 @@ export const metadataGroupFromKey = (key: string): MetadataGroup => {
   if (group === "IPTC" || group === "IPTC2") return "IPTC";
   if (group.startsWith("XMP")) return "XMP";
   if (group === "MakerNotes" || group.endsWith("MakerNotes")) return "MakerNotes";
-  if (group === "ICC_Profile") return "ICC";
+  if (group.startsWith("ICC_Profile")) return "ICC";
   if (group === "Photoshop") return "Photoshop";
   if (group === "JUMBF" || group === "C2PA") return "C2PA";
   if (group === "File") return "File";

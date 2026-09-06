@@ -37,12 +37,14 @@ test("normalizes ExifTool groups and preserves list values", () => {
     "XMP-dc:Subject": ["travel", "Shanghai"],
     "MakerNotes:SerialNumber": "12345",
     "ICC_Profile:ProfileDescription": "Display P3",
+    "ICC_Profile2:ProfileDescription": "Display P3 auxiliary",
     "JUMBF:Manifest": "credential",
   });
 
   assert.equal(fields.find((field) => field.key === "XMP-dc:Subject")?.value, "travel, Shanghai");
   assert.equal(fields.find((field) => field.key === "MakerNotes:SerialNumber")?.group, "MakerNotes");
   assert.equal(fields.find((field) => field.key === "ICC_Profile:ProfileDescription")?.group, "ICC");
+  assert.equal(fields.find((field) => field.key === "ICC_Profile2:ProfileDescription")?.group, "ICC");
   assert.equal(fields.find((field) => field.key === "JUMBF:Manifest")?.group, "C2PA");
 });
 
@@ -67,6 +69,29 @@ test("detects semantic conflicts and uses the first mapped value", () => {
   ]);
 });
 
+test("does not treat IPTC's separate date and time fields as a date conflict", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:DateTimeOriginal": "2023:05:29 18:47:00",
+    "XMP-exif:DateTimeOriginal": "2023:05:29 18:47:00",
+    "XMP-photoshop:DateCreated": "2023:05:29 18:47:00",
+    "IPTC:DateCreated": "2023:05:29",
+    "IPTC:TimeCreated": "18:47:00",
+  });
+
+  assert.equal(semanticConflicts(fields, labels).some((conflict) => conflict.key === "dateTime"), false);
+});
+
+test("does not treat IPTC's UTC time suffix as a date conflict", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:DateTimeOriginal": "2023:05:29 18:47:00",
+    "XMP-exif:DateTimeOriginal": "2023:05:29 18:47:00",
+    "IPTC:DateCreated": "2023:05:29",
+    "IPTC:TimeCreated": "18:47:00+00:00",
+  });
+
+  assert.equal(semanticConflicts(fields, labels).some((conflict) => conflict.key === "dateTime"), false);
+});
+
 test("uses the namespaced EXIF author instead of an unrelated PNG text field", () => {
   const fields = normalizeExifToolFields({
     "EXIF:Artist": "Updated author",
@@ -85,6 +110,13 @@ test("writes semantic fields to every compatible tag and splits keywords", () =>
   assert.deepEqual(semanticWriteTags("keywords", " travel, Shanghai ,, film "), {
     "XMP-dc:Subject": ["travel", "Shanghai", "film"],
     "IPTC:Keywords": ["travel", "Shanghai", "film"],
+  });
+  assert.deepEqual(semanticWriteTags("dateTime", "2026:09:06 12:00:00"), {
+    "EXIF:DateTimeOriginal": "2026:09:06 12:00:00",
+    "XMP-exif:DateTimeOriginal": "2026:09:06 12:00:00",
+    "XMP-photoshop:DateCreated": "2026:09:06 12:00:00",
+    "IPTC:DateCreated": "2026:09:06",
+    "IPTC:TimeCreated": "12:00:00",
   });
 });
 

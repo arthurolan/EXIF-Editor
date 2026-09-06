@@ -1,5 +1,5 @@
 export const outputNameFor = (fileName, extension = "jpg") => {
-  const baseName = fileName.replace(/\.(?:jpe?g|png|webp)$/i, "");
+  const baseName = fileName.replace(/\.(?:jpe?g|png|webp|tiff?|hei[cf])$/i, "");
   const normalizedExtension = extension.toLowerCase() === "jpeg" ? "jpg" : extension.toLowerCase();
   return `${/_edited$/i.test(baseName) ? baseName : `${baseName}_edited`}.${normalizedExtension}`;
 };

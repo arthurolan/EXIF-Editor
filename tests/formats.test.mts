@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   imageDataPayload,
   imageFormatFromFile,
+  formatSafetyFromBuffer,
   normalizePngUtf8TextChunks,
 } from "../app/metadata/formats";
 
@@ -22,11 +23,51 @@ const pngChunk = (type: string, data: Uint8Array): number[] => [
   0,
 ];
 
-test("detects JPEG, PNG, and WebP by MIME type or extension", () => {
+test("detects stable and experimental formats by MIME type or extension", () => {
   assert.equal(imageFormatFromFile({ name: "photo.JPG", type: "" })?.format, "jpeg");
   assert.equal(imageFormatFromFile({ name: "photo", type: "image/png" })?.extension, "png");
   assert.equal(imageFormatFromFile({ name: "photo.webp", type: "" })?.mimeType, "image/webp");
-  assert.equal(imageFormatFromFile({ name: "photo.heic", type: "image/heic" }), null);
+  assert.equal(imageFormatFromFile({ name: "scan.tiff", type: "" })?.format, "tiff");
+  assert.equal(imageFormatFromFile({ name: "photo.heif", type: "image/heif" })?.format, "heic");
+});
+
+const classicTiff = (nextIfd = 0): ArrayBuffer => {
+  const bytes = new Uint8Array(45);
+  const view = new DataView(bytes.buffer);
+  bytes.set([0x49, 0x49]);
+  view.setUint16(2, 42, true);
+  view.setUint32(4, 8, true);
+  view.setUint16(8, 2, true);
+  view.setUint16(10, 273, true); // StripOffsets
+  view.setUint16(12, 4, true);
+  view.setUint32(14, 1, true);
+  view.setUint32(18, 42, true);
+  view.setUint16(22, 279, true); // StripByteCounts
+  view.setUint16(24, 4, true);
+  view.setUint32(26, 1, true);
+  view.setUint32(30, 3, true);
+  view.setUint32(34, nextIfd, true);
+  bytes.set([1, 2, 3], 42);
+  return bytes.buffer;
+};
+
+const heic = (): ArrayBuffer => bytes(
+  0, 0, 0, 20, 102, 116, 121, 112, 104, 101, 105, 99, 0, 0, 0, 0, 109, 105, 102, 49,
+  0, 0, 0, 12, 109, 100, 97, 116, 1, 2, 3, 4,
+);
+
+test("uses TIFF strips for conservative image-data verification and blocks multiple pages", () => {
+  const source = classicTiff();
+  assert.deepEqual([...imageDataPayload(source, "tiff")], [1, 2, 3]);
+  assert.deepEqual(formatSafetyFromBuffer(source, "tiff"), { writable: true });
+  assert.equal(formatSafetyFromBuffer(classicTiff(40), "tiff").writable, false);
+  assert.equal(formatSafetyFromBuffer(bytes(0x49, 0x49, 43, 0, 0, 0, 0, 0), "tiff").writable, false);
+});
+
+test("uses HEIC/HEIF mdat data for conservative verification", () => {
+  assert.deepEqual([...imageDataPayload(heic(), "heic")], [1, 2, 3, 4]);
+  assert.deepEqual(formatSafetyFromBuffer(heic(), "heic"), { writable: true });
+  assert.equal(formatSafetyFromBuffer(bytes(0, 0, 0, 12, 102, 116, 121, 112, 109, 112, 52, 50), "heic").writable, false);
 });
 
 test("uses only PNG IDAT chunks for image-data verification", () => {

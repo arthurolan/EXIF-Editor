@@ -52,7 +52,7 @@ export const SEMANTIC_FIELDS: SemanticFieldDefinition[] = [
   },
   {
     key: "dateTime",
-    tags: ["EXIF:DateTimeOriginal", "XMP-exif:DateTimeOriginal"],
+    tags: ["EXIF:DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-photoshop:DateCreated", "IPTC:DateCreated"],
   },
   {
     key: "make",
@@ -79,6 +79,12 @@ export const SEMANTIC_FIELDS: SemanticFieldDefinition[] = [
 const uniqueValues = (values: string[]): string[] =>
   [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 
+const comparableTimestamp = (value: string): string =>
+  value
+    .trim()
+    .replace(/\.\d+/, "")
+    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/i, "");
+
 const matchesTag = (field: MetadataField, key: string): boolean => {
   if (field.key === key) return true;
 
@@ -89,8 +95,17 @@ const matchesTag = (field: MetadataField, key: string): boolean => {
   return field.group === (group.startsWith("XMP") ? "XMP" : group) && field.tag === tag;
 };
 
-const valueForTag = (fields: MetadataField[], key: string): string =>
-  fields.find((field) => matchesTag(field, key))?.value.trim() ?? "";
+const valueForTag = (fields: MetadataField[], key: string): string => {
+  const value = fields.find((field) => matchesTag(field, key))?.value.trim() ?? "";
+  // IPTC stores capture date and time separately. Compare the composed value
+  // with EXIF/XMP timestamps, otherwise a synchronized IPTC date is always
+  // reported as a false conflict because it has no time component by itself.
+  if (key === "IPTC:DateCreated" && value) {
+    const time = fields.find((field) => matchesTag(field, "IPTC:TimeCreated"))?.value.trim();
+    return time ? `${value} ${time}` : value;
+  }
+  return value;
+};
 
 export const semanticValueFromFields = (
   fields: MetadataField[],
@@ -107,6 +122,18 @@ export const semanticWriteTags = (
 ): Record<string, string | string[]> => {
   const definition = SEMANTIC_FIELDS.find((field) => field.key === key);
   if (!definition) return {};
+  if (key === "dateTime") {
+    const [date = "", time = ""] = value.split(" ");
+    return {
+      "EXIF:DateTimeOriginal": value,
+      "XMP-exif:DateTimeOriginal": value,
+      "XMP-photoshop:DateCreated": value,
+      // IPTC stores date and time in separate fields. Writing a full EXIF
+      // timestamp to DateCreated leaves the original IPTC value untouched.
+      "IPTC:DateCreated": date,
+      "IPTC:TimeCreated": time,
+    };
+  }
   const nextValue = definition.list
     ? value
         .split(",")
@@ -127,7 +154,11 @@ export const semanticConflicts = (
         value: valueForTag(fields, tag),
       }))
       .filter((item) => item.value);
-    const distinct = uniqueValues(values.map((item) => item.value));
+    const distinct = uniqueValues(
+      values.map((item) =>
+        definition.key === "dateTime" ? comparableTimestamp(item.value) : item.value,
+      ),
+    );
     if (distinct.length < 2) return null;
     return {
       key: definition.key,

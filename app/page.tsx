@@ -31,6 +31,7 @@ import {
   imageDataDigest,
   imageFormatFromFile,
   fileForMetadataWrite,
+  formatSafetyFromBuffer,
   type ImageFormatInfo,
 } from "./metadata/formats";
 import {
@@ -67,17 +68,17 @@ const COPY = {
     privacyLink: "关于隐私",
     versionBadge: "V2.0 工作流",
     heroTitle: "照片元数据工作台",
-    heroCopy1: "读取、编辑和清理 JPEG、PNG、WebP 的 EXIF、XMP 与 IPTC 信息。",
+    heroCopy1: "读取、编辑和清理 JPEG、PNG、WebP，以及实验性 TIFF、HEIC/HEIF 的 EXIF、XMP 与 IPTC 信息。",
     heroCopy2: "不上传原片，不改变画质，只导出新的副本。",
     flowLabel: "处理流程",
     chooseStep: "选择照片",
     editStep: "编辑信息",
     verifyStep: "核验导出",
     workspaceLabel: "照片元数据工作区",
-    chooseAria: "选择 JPEG、PNG 或 WebP 图片",
+    chooseAria: "选择 JPEG、PNG、WebP、TIFF 或 HEIC/HEIF 图片",
     startHere: "从这里开始",
     dropTitle: "把一张照片拖到这里",
-    dropCopy: "或从设备中选择一张 JPEG、PNG 或 WebP 图片",
+    dropCopy: "或从设备中选择 JPEG、PNG、WebP、TIFF 或 HEIC/HEIF 图片",
     reading: "正在读取…",
     choosePhoto: "选择照片",
     maxSize: "单张最大 500 MB",
@@ -185,6 +186,7 @@ const COPY = {
     reviewKicker: "导出前确认",
     reviewTitle: "这些信息将被写入副本",
     reviewCopy: "原片不会被覆盖。写入后会重新读取元数据，并确认图像编码数据保持不变。",
+    reviewCopyStructural: "原片不会被覆盖。写入后会重新读取元数据，并复核图像容器结构；HEIC/HEIF 无法进行像素级哈希比对。",
     outputFile: "输出文件",
     writing: "正在写入并验证…",
     confirmDownload: "确认写入并验证",
@@ -207,7 +209,11 @@ const COPY = {
     gpsExists: "存在 GPS 信息",
     gpsRemoved: "完整删除 GPS IFD",
     gpsCoordinates: "GPS 坐标",
-    jpegOnly: "目前支持 JPEG、PNG 和 WebP 图片。",
+    jpegOnly: "目前支持 JPEG、PNG、WebP，以及实验性 TIFF、HEIC / HEIF 图片。",
+    experimentalFormatWarning: "实验性格式：TIFF 会复核图像数据区；HEIC/HEIF 仅复核容器与 mdat 数据存在，不能进行像素级哈希比对。浏览器预览及第三方兼容性可能有限。",
+    heicRetentionWarning: "此 HEIC 含 HDR、景深或人像效果等辅助图像数据。相关 XMP 与 ICC 配置是图像项目的一部分，会保留以保护视觉效果；标准 XMP、GPS 和隐私字段仍可清理。",
+    heicFullWipeUnsupported: "此 HEIC 的辅助图像 XMP 与 ICC 配置无法在不损害 HDR、景深或颜色的情况下安全删除，因此不支持彻底清空或删除 ICC 色彩配置。",
+    verificationNoteStructural: "字段已复核 · 图像容器结构复核通过",
     fileTooLarge: "图片超过 100 MB。请先选择体积更小的文件。",
     parseFailed: "没有成功解析这张图片。文件可能已损坏，或包含暂不支持的元数据结构。",
     invalidCoordinates: "请输入有效的 WGS-84 经纬度：纬度范围 −90～90，经度范围 −180～180。",
@@ -231,17 +237,17 @@ const COPY = {
     privacyLink: "Privacy",
     versionBadge: "V2.0 workflow",
     heroTitle: "Photo Metadata Workspace",
-    heroCopy1: "Read, edit, and clean JPEG, PNG, and WebP EXIF, XMP, and IPTC metadata.",
+    heroCopy1: "Read, edit, and clean JPEG, PNG, WebP, and experimental TIFF and HEIC/HEIF EXIF, XMP, and IPTC metadata.",
     heroCopy2: "Your original never leaves the browser or gets recompressed.",
     flowLabel: "Workflow",
     chooseStep: "Choose photo",
     editStep: "Edit metadata",
     verifyStep: "Verify & export",
     workspaceLabel: "Photo metadata workspace",
-    chooseAria: "Choose a JPEG, PNG, or WebP image",
+    chooseAria: "Choose a JPEG, PNG, WebP, TIFF, or HEIC/HEIF image",
     startHere: "START HERE",
     dropTitle: "Drop a photo here",
-    dropCopy: "or choose a JPEG, PNG, or WebP image from your device",
+    dropCopy: "or choose a JPEG, PNG, WebP, TIFF, or HEIC/HEIF image from your device",
     reading: "Reading…",
     choosePhoto: "Choose photo",
     maxSize: "Up to 500 MB",
@@ -349,6 +355,7 @@ const COPY = {
     reviewKicker: "BEFORE EXPORT",
     reviewTitle: "These changes will be written to the copy",
     reviewCopy: "Your original will not be overwritten. Metadata is read again after writing and the encoded image data is checked.",
+    reviewCopyStructural: "Your original will not be overwritten. Metadata is read again after writing and the image container is verified; HEIC/HEIF cannot use a pixel-level hash.",
     outputFile: "Output file",
     writing: "Writing & verifying…",
     confirmDownload: "Write changes & verify",
@@ -371,7 +378,11 @@ const COPY = {
     gpsExists: "GPS data exists",
     gpsRemoved: "Remove complete GPS IFD",
     gpsCoordinates: "GPS coordinates",
-    jpegOnly: "JPEG, PNG, and WebP images are currently supported.",
+    jpegOnly: "JPEG, PNG, WebP, and experimental TIFF and HEIC / HEIF images are currently supported.",
+    experimentalFormatWarning: "Experimental format: TIFF image data areas are checked. HEIC/HEIF verifies only the container and mdat data presence, not a pixel-level hash. Browser previews and third-party compatibility may be limited.",
+    heicRetentionWarning: "This HEIC contains auxiliary HDR, depth, or portrait-effect image data. Its related XMP and ICC profiles are retained to protect visual rendering; standard XMP, GPS, and privacy fields can still be cleaned.",
+    heicFullWipeUnsupported: "This HEIC's auxiliary-image XMP and ICC profiles cannot be safely removed without affecting HDR, depth, or color, so full wipe and ICC-profile removal are unavailable.",
+    verificationNoteStructural: "Fields verified · Image container structure verified",
     fileTooLarge: "This image is larger than 100 MB. Please choose a smaller file.",
     parseFailed: "This image could not be parsed. It may be damaged or contain an unsupported metadata structure.",
     invalidCoordinates: "Enter valid WGS-84 coordinates: latitude −90 to 90 and longitude −180 to 180.",
@@ -538,6 +549,60 @@ const formatBytes = (bytes: number): string => {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 };
 
+// TIFF keeps these baseline IFD entries even after ExifTool deletes metadata:
+// they describe how to decode the image rather than user metadata. Treating
+// them as a cleanup leak blocks every valid TIFF export.
+const REQUIRED_TIFF_IMAGE_TAGS = new Set([
+  "NewSubfileType",
+  "SubfileType",
+  "ImageWidth",
+  "ImageHeight",
+  "BitsPerSample",
+  "Compression",
+  "PhotometricInterpretation",
+  "StripOffsets",
+  "SamplesPerPixel",
+  "RowsPerStrip",
+  "StripByteCounts",
+  "PlanarConfiguration",
+  "TileWidth",
+  "TileLength",
+  "TileOffsets",
+  "TileByteCounts",
+  "SampleFormat",
+  "Predictor",
+  "ExtraSamples",
+  "Orientation",
+  "XResolution",
+  "YResolution",
+  "XPosition",
+  "YPosition",
+  "ResolutionUnit",
+  "SubIFD",
+  "ExifOffset",
+  "GPSInfo",
+  "YCbCrCoefficients",
+  "YCbCrSubSampling",
+  "YCbCrPositioning",
+  "ReferenceBlackWhite",
+  "ColorMap",
+  "SMinSampleValue",
+  "SMaxSampleValue",
+  "TransferFunction",
+  "WhitePoint",
+  "PrimaryChromaticities",
+]);
+
+const isRequiredTiffImageField = (key: string): boolean => {
+  const separator = key.indexOf(":");
+  if (separator < 0 || !["EXIF", "IFD0", "IFD1", "ExifIFD"].includes(key.slice(0, separator))) return false;
+  return REQUIRED_TIFF_IMAGE_TAGS.has(key.slice(separator + 1));
+};
+
+const isRequiredHeicVisualMetadata = (key: string): boolean =>
+  /^ICC_Profile\d*:/i.test(key) ||
+  /^XMP-(?:x:|semanticSegmentationMatte:|apdi:|depthData:|depthBlurEffect:|portraitLightingEffect:|HDRGainMap:)/.test(key);
+
 const display = (value: string, fallback: string): string => value.trim() || fallback;
 
 const getImageDimensions = (url: string): Promise<{ width: number; height: number }> =>
@@ -604,10 +669,13 @@ export default function Home() {
   };
 
   const resolveConflict = (key: SemanticFieldKey, value: string) => {
-    assign(key, value);
+    // datetime-local expects a local ISO-like value. Conflict values from EXIF,
+    // XMP, and IPTC use different precisions and may include a timezone.
+    const normalizedValue = key === "dateTime" ? exifDateToInput(value) : value;
+    assign(key, normalizedValue);
     // A selected value must be written back to every compatible tag even when
     // it matches the value initially chosen for the form.
-    setResolvedConflicts((current) => ({ ...current, [key]: value }));
+    setResolvedConflicts((current) => ({ ...current, [key]: normalizedValue }));
   };
 
   const changeLanguage = (nextLanguage: Language) => {
@@ -635,6 +703,11 @@ export default function Home() {
     }
     if (selected.size > MAX_FILE_SIZE) {
       setError(t.fileTooLarge);
+      return;
+    }
+    const formatSafety = formatSafetyFromBuffer(await selected.arrayBuffer(), format.format);
+    if (!formatSafety.writable) {
+      setError(formatSafety.reason);
       return;
     }
 
@@ -911,6 +984,13 @@ export default function Home() {
       setError(t.invalidCoordinates);
       return;
     }
+    if (
+      fileInfo?.format.format === "heic" &&
+      (cleanupPreset === "full" || groupDeletes.includes("ICC_Profile:All"))
+    ) {
+      setError(t.heicFullWipeUnsupported);
+      return;
+    }
     if (!diffs.length) {
       setError(t.nothingToWrite);
       return;
@@ -988,6 +1068,9 @@ export default function Home() {
         ...cleanupDeletionTargets,
         ...groupDeletes,
       ];
+      const removesTiffExif =
+        format.format === "tiff" &&
+        requestedDeletionTargets.some((tag) => tag === "All" || tag === "EXIF:All");
       const shouldDeleteGps =
         gpsMode === "remove" || requestedDeletionTargets.includes("GPS:All");
 
@@ -1021,6 +1104,16 @@ export default function Home() {
       for (const tag of privacySerialDeletionTargets) writeTags[tag] = "";
       for (const tag of groupDeletes) {
         writeTags[tag] = "";
+      }
+      if (removesTiffExif) {
+        // ExifTool retains writable IFD0 fields when asked to delete EXIF:All
+        // from a TIFF. Clear the actual non-structural IFD entries explicitly;
+        // the required image-layout entries stay intact for a valid output.
+        for (const field of metadataFields) {
+          if (field.group === "EXIF" && !isRequiredTiffImageField(field.key)) {
+            writeTags[field.key] = "";
+          }
+        }
       }
 
       // Browser text is UTF-8. Explicitly mark IPTC text the same way so old
@@ -1126,8 +1219,14 @@ export default function Home() {
           semanticValueFromFields(verifiedMetadataFields, "country") === form.country) &&
         (!shouldWriteSemanticField("description") ||
           semanticValueFromFields(verifiedMetadataFields, "description") === form.description);
+      const deletionVerificationFields =
+        format.format === "tiff"
+          ? verifiedMetadataFields.filter((field) => !isRequiredTiffImageField(field.key))
+          : format.format === "heic"
+            ? verifiedMetadataFields.filter((field) => !isRequiredHeicVisualMetadata(field.key))
+          : verifiedMetadataFields;
       const remainingDeletionTags = remainingDeletionTargets(
-        verifiedMetadataFields,
+        deletionVerificationFields,
         [
           ...CLEANUP_PRESETS[cleanupPreset].tags,
           ...privacySerialDeletionTargets,
@@ -1159,9 +1258,15 @@ export default function Home() {
         (form.focalLength === original.focalLength ||
           sameNumericValue(numericTag(verifiedTags, ["FocalLength"]), form.focalLength));
 
-      const originalDigest = await imageDataDigest(file, format.format);
-      const nextDigest = await imageDataDigest(outputFile, format.format);
-      const samePixels = originalDigest === nextDigest;
+      // HEIC metadata item payloads are stored inside the ISO-BMFF mdat box.
+      // Hashing the entire box therefore reports every legitimate metadata edit
+      // as an image change. For HEIC/HEIF, re-check the output container and
+      // rely on ExifTool's metadata-only writer instead of a false pixel hash.
+      const samePixels =
+        format.format === "heic"
+          ? formatSafetyFromBuffer(outputBuffer, format.format).writable
+          : (await imageDataDigest(file, format.format)) ===
+            (await imageDataDigest(outputFile, format.format));
 
       setVerified(gpsOk && editableFieldsOk);
       setPixelVerified(samePixels);
@@ -1267,7 +1372,7 @@ export default function Home() {
             <input
               ref={inputRef}
               type="file"
-              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.heic,.heif,image/jpeg,image/png,image/webp,image/tiff,image/heic,image/heif"
               onChange={onInput}
               aria-label={t.chooseAria}
             />
@@ -1287,7 +1392,7 @@ export default function Home() {
               {busy ? t.reading : t.choosePhoto}
             </button>
             <div className="drop-meta">
-              <span>JPEG / PNG / WebP</span>
+              <span>JPEG / PNG / WebP / TIFF / HEIC</span>
               <span>{t.maxSize}</span>
               <span><ShieldCheck size={14} />{t.neverUpload}</span>
             </div>
@@ -1310,7 +1415,7 @@ export default function Home() {
                     {fileInfo?.width && fileInfo.height
                       ? `${fileInfo.width} × ${fileInfo.height} · `
                       : ""}
-                    {fileInfo?.format.label} · {formatBytes(fileInfo?.size ?? 0)}
+                    {fileInfo?.format.label}{fileInfo?.format.experimental ? ` · ${language === "zh" ? "实验性" : "Experimental"}` : ""} · {formatBytes(fileInfo?.size ?? 0)}
                   </span>
                 </div>
               </div>
@@ -1321,13 +1426,25 @@ export default function Home() {
               >
                 <Upload size={16} />{t.changePhoto}
               </button>
-              <input ref={inputRef} className="sr-only" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={onInput} />
+              <input ref={inputRef} className="sr-only" type="file" accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.heic,.heif,image/jpeg,image/png,image/webp,image/tiff,image/heic,image/heif" onChange={onInput} />
             </div>
 
             {c2paDetected && (
               <div className="warning-banner">
                 <Fingerprint size={18} />
                 {t.c2paWarning}
+              </div>
+            )}
+            {fileInfo?.format.experimental && (
+              <div className="warning-banner">
+                <AlertTriangle size={18} />
+                {t.experimentalFormatWarning}
+              </div>
+            )}
+            {fileInfo?.format.format === "heic" && (
+              <div className="warning-banner">
+                <AlertTriangle size={18} />
+                {t.heicRetentionWarning}
               </div>
             )}
 
@@ -1570,13 +1687,17 @@ export default function Home() {
                                   ? "is-selected"
                                   : undefined
                               }
-                              aria-pressed={resolvedConflicts[conflict.key] === item.value}
+                              aria-pressed={
+                                resolvedConflicts[conflict.key] ===
+                                (conflict.key === "dateTime" ? exifDateToInput(item.value) : item.value)
+                              }
                               onClick={() => resolveConflict(conflict.key, item.value)}
                             >
                               <span>{item.tag}</span>
                               <b>{item.value}</b>
                               <small>
-                                {resolvedConflicts[conflict.key] === item.value
+                                {resolvedConflicts[conflict.key] ===
+                                (conflict.key === "dateTime" ? exifDateToInput(item.value) : item.value)
                                   ? t.valueApplied
                                   : t.useThisValue}
                               </small>
@@ -1747,7 +1868,7 @@ export default function Home() {
           <div className={`message ${verified && pixelVerified ? "success-message" : "status-message"}`}>
             {verified && pixelVerified ? <Check size={17} /> : <RefreshCw className={busy ? "spin" : ""} size={17} />}
             <span>{status}</span>
-            {verified && pixelVerified && <small>{t.verificationNote}</small>}
+            {verified && pixelVerified && <small>{fileInfo?.format.verification === "structural" ? t.verificationNoteStructural : t.verificationNote}</small>}
           </div>
         )}
       </section>
@@ -1780,7 +1901,7 @@ export default function Home() {
             </button>
             <span className="modal-kicker">{t.reviewKicker}</span>
             <h2 id="review-title">{t.reviewTitle}</h2>
-            <p className="modal-copy">{t.reviewCopy}</p>
+            <p className="modal-copy">{fileInfo?.format.verification === "structural" ? t.reviewCopyStructural : t.reviewCopy}</p>
             <div className="diff-list">
               {diffs.map((diff) => (
                 <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>

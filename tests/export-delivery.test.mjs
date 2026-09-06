@@ -12,9 +12,11 @@ test("adds exactly one edited suffix to JPEG output names", () => {
   assert.equal(outputNameFor("IMG_4846_edited.jpeg"), "IMG_4846_edited.jpg");
 });
 
-test("preserves PNG and WebP output extensions", () => {
+test("preserves PNG, WebP, TIFF, and HEIC output extensions", () => {
   assert.equal(outputNameFor("cover.png", "png"), "cover_edited.png");
   assert.equal(outputNameFor("cover_edited.webp", "webp"), "cover_edited.webp");
+  assert.equal(outputNameFor("scan.tiff", "tif"), "scan_edited.tif");
+  assert.equal(outputNameFor("photo.heif", "heic"), "photo_edited.heic");
 });
 
 test("detects mobile browsers without treating a desktop Mac as mobile", () => {
