@@ -22,31 +22,34 @@ export const gpsDeletionTags = (fields: MetadataField[]): string[] => [
   ...fields.filter(isGpsMetadataField).map((field) => field.key),
 ];
 
-const WRITABLE_PRIVACY_SERIAL_KEYS = new Set([
-  "EXIF:SerialNumber",
-  "EXIF:CameraSerialNumber",
-  "EXIF:InternalSerialNumber",
-  "EXIF:BodySerialNumber",
-  "EXIF:LensSerialNumber",
-  "XMP-exifEX:LensSerialNumber",
-  "XMP-aux:LensSerialNumber",
-]);
+export const isPrivacySerialMetadataField = (field: MetadataField): boolean =>
+  /serial.?number/i.test(field.tag);
 
 /**
- * Some XMP serial fields are read-only aliases in ExifTool. Delete the XMP
- * packet as a group in that case instead of issuing an individual, failing
- * write. Camera EXIF and recognised lens fields remain narrow deletions.
+ * ExifTool reports EXIF fields using several namespaces (for example
+ * ExifIFD:BodySerialNumber). Delete every EXIF source key directly instead of
+ * relying on a short canonical-key list. Some XMP aliases remain read-only, so
+ * their packet is deleted as a group.
  */
 export const privacySerialDeletionTags = (fields: MetadataField[]): string[] => {
   const tags = new Set<string>();
   for (const field of fields) {
-    if (!/serial.?number/i.test(field.tag)) continue;
-    if (WRITABLE_PRIVACY_SERIAL_KEYS.has(field.key)) tags.add(field.key);
+    if (!isPrivacySerialMetadataField(field)) continue;
+    if (field.group === "EXIF") tags.add(field.key);
     else if (field.group === "XMP") tags.add("XMP:All");
     else if (field.group === "MakerNotes") tags.add("MakerNotes:All");
+    else if (field.group === "Photoshop") tags.add("Photoshop:All");
   }
   return [...tags];
 };
+
+/** Only embedded serial identifiers count as privacy leaks; File/Composite values are derived. */
+export const remainingPrivacySerialFields = (fields: MetadataField[]): MetadataField[] =>
+  fields.filter(
+    (field) =>
+      isPrivacySerialMetadataField(field) &&
+      ["EXIF", "XMP", "MakerNotes", "Photoshop"].includes(field.group),
+  );
 
 export const privacySerialDeletionTagsForPreset = (
   fields: MetadataField[],

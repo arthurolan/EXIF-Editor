@@ -48,6 +48,7 @@ import {
   isGpsLocationMetadataField,
   privacySerialDeletionTagsForPreset,
   remainingDeletionTargets,
+  remainingPrivacySerialFields,
 } from "./metadata/clean";
 import {
   SemanticFieldKey,
@@ -1235,6 +1236,10 @@ export default function Home() {
           ...groupDeletes,
         ],
       );
+      const remainingPrivacySerials =
+        cleanupPreset === "privacy"
+          ? remainingPrivacySerialFields(deletionVerificationFields)
+          : [];
       const editableFieldsOk =
         semanticFieldsOk &&
         // Semantic fields above are verified from ExifTool's namespaced tags.
@@ -1274,8 +1279,11 @@ export default function Home() {
       setPixelVerified(samePixels);
       if (!gpsOk) throw new Error(t.gpsVerificationFailed);
       if (!editableFieldsOk) throw new Error(t.fieldVerificationFailed);
-      if (remainingDeletionTags.length) {
-        console.error("Metadata cleanup verification failed", JSON.stringify(remainingDeletionTags));
+      if (remainingDeletionTags.length || remainingPrivacySerials.length) {
+        console.error(
+          "Metadata cleanup verification failed",
+          JSON.stringify([...remainingDeletionTags, ...remainingPrivacySerials.map((field) => field.key)]),
+        );
         throw new Error(t.cleanupVerificationFailed);
       }
       if (!samePixels) throw new Error(t.pixelsChanged);

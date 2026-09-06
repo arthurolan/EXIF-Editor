@@ -1,5 +1,5 @@
 import { outputNameFor } from "./export-delivery.mjs";
-import { gpsDeletionTags, isGpsLocationMetadataField, privacySerialDeletionTagsForPreset, remainingDeletionTargets } from "./metadata/clean";
+import { gpsDeletionTags, isGpsLocationMetadataField, privacySerialDeletionTagsForPreset, remainingDeletionTargets, remainingPrivacySerialFields } from "./metadata/clean";
 import { fileForMetadataWrite, formatSafetyFromBuffer, imageDataDigest, imageFormatFromFile } from "./metadata/formats";
 import { CLEANUP_PRESETS, normalizeExifToolFields, type MetadataField } from "./metadata/schema";
 
@@ -82,6 +82,9 @@ export const processBatchFile = async (
     if (outputFields.some(isGpsLocationMetadataField)) return { success: false, reason: "GPS verification failed; this copy was not delivered." };
     if (remainingDeletionTargets(outputFields, deletionTargets).length) {
       return { success: false, reason: "Privacy-cleanup verification failed; this copy was not delivered." };
+    }
+    if (operation === "privacy" && remainingPrivacySerialFields(outputFields).length) {
+      return { success: false, reason: "Serial-number privacy verification failed; this copy was not delivered." };
     }
     const sameImageData = format.format === "heic"
       ? formatSafetyFromBuffer(result.data, format.format).writable
