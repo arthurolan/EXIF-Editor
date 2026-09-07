@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Check, Clock3, Download, FileImage, FolderOpen, ImagePlus, MapPin, PencilLine, Play, RefreshCw, ShieldCheck, Volume2, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Clock3, Download, FileImage, FolderOpen, ImagePlus, Map, MapPin, PencilLine, Play, RefreshCw, ShieldCheck, Volume2, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { hasBatchTextEdits, parseBatchGpsEdits, processBatchFile, type BatchGpsInput, type BatchOperation, type BatchPhase, type BatchTextEdits, type BatchTextField, type BatchTimeOffset } from "./batch-processor";
 import { imageFormatFromFile } from "./metadata/formats";
@@ -16,9 +17,10 @@ type CompletionState = "complete" | "stopped" | null;
 const EMPTY_TEXT_EDITS: BatchTextEdits = { artist: "", copyright: "", keywords: "", city: "", country: "" };
 const EMPTY_TIME_OFFSET: BatchTimeOffset = { days: 0, hours: 0, minutes: 0 };
 const EMPTY_GPS_INPUT: BatchGpsInput = { latitude: "", longitude: "", altitude: "", direction: "" };
+const MapPicker = dynamic(() => import("./map-picker"), { ssr: false });
 const GPS_COPY = {
-  zh: { action: "写入 GPS", title: "要写入全部照片的位置", hint: "坐标以 WGS‑84 写入。纬度和经度必填；海拔、拍摄方向可选，留空时保持每张照片原有值。南纬和西经使用负数。", latitude: "纬度", longitude: "经度", altitude: "海拔（米，可选）", direction: "拍摄方向（0–359°，可选）", invalid: "请填写有效的纬度（−90 至 90）和经度（−180 至 180）；方向须为 0–359。" },
-  en: { action: "Write GPS", title: "Location to write to every photo", hint: "Coordinates are written in WGS‑84. Latitude and longitude are required; altitude and direction are optional and keep each photo's existing value when blank. Use negative values for south and west.", latitude: "Latitude", longitude: "Longitude", altitude: "Altitude (metres, optional)", direction: "Direction (0–359°, optional)", invalid: "Enter a valid latitude (−90 to 90) and longitude (−180 to 180); direction must be 0–359." },
+  zh: { action: "写入 GPS", title: "要写入全部照片的位置", hint: "坐标以 WGS‑84 写入。纬度和经度必填；海拔、拍摄方向可选，留空时保持每张照片原有值。南纬和西经使用负数。", latitude: "纬度", longitude: "经度", altitude: "海拔（米，可选）", direction: "拍摄方向（0–359°，可选）", pick: "在地图上点选位置", consent: "点击后才会从 OpenFreeMap 加载地图，地图服务会获知当前视野附近区域。", invalid: "请填写有效的纬度（−90 至 90）和经度（−180 至 180）；方向须为 0–359。" },
+  en: { action: "Write GPS", title: "Location to write to every photo", hint: "Coordinates are written in WGS‑84. Latitude and longitude are required; altitude and direction are optional and keep each photo's existing value when blank. Use negative values for south and west.", latitude: "Latitude", longitude: "Longitude", altitude: "Altitude (metres, optional)", direction: "Direction (0–359°, optional)", pick: "Choose a location on the map", consent: "Clicking loads OpenFreeMap, which receives the approximate map area in view.", invalid: "Enter a valid latitude (−90 to 90) and longitude (−180 to 180); direction must be 0–359." },
 } as const;
 
 const copy = {
@@ -43,6 +45,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const [textEdits, setTextEdits] = useState<BatchTextEdits>(EMPTY_TEXT_EDITS);
   const [timeOffset, setTimeOffset] = useState<BatchTimeOffset>(EMPTY_TIME_OFFSET);
   const [gpsInput, setGpsInput] = useState<BatchGpsInput>(EMPTY_GPS_INPUT);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [running, setRunning] = useState(false);
   const [completionState, setCompletionState] = useState<CompletionState>(null);
@@ -62,6 +65,10 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const metadataReady = hasBatchTextEdits(textEdits);
   const timeOffsetReady = Boolean(timeOffset.days || timeOffset.hours || timeOffset.minutes);
   const gpsEdits = parseBatchGpsEdits(gpsInput);
+  // Keep an empty coordinate unset so the shared picker opens at its neutral default,
+  // rather than treating an empty input as the valid coordinate 0, 0.
+  const mapLatitude = gpsInput.latitude.trim() ? Number(gpsInput.latitude) : Number.NaN;
+  const mapLongitude = gpsInput.longitude.trim() ? Number(gpsInput.longitude) : Number.NaN;
   const currentItem = items.find((item) => item.status === "reading" || item.status === "writing" || item.status === "verifying");
   const progressPercent = items.length ? Math.round((counts.completed / items.length) * 100) : 0;
   const containsHeic = items.some((item) => imageFormatFromFile(item.source)?.format === "heic");
@@ -233,6 +240,11 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
         <div className="batch-metadata-fields">
           <label><span>{gpsCopy.latitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.latitude} onChange={(event) => assignGps("latitude", event.target.value)} placeholder="31.2304" /></label>
           <label><span>{gpsCopy.longitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.longitude} onChange={(event) => assignGps("longitude", event.target.value)} placeholder="121.4737" /></label>
+        </div>
+        {!mapLoaded && !configurationLocked ? <button type="button" className="map-consent batch-map-consent" onClick={() => setMapLoaded(true)}>
+          <span><Map size={20} /></span><div><strong>{gpsCopy.pick}</strong><small>{gpsCopy.consent}</small></div><ArrowRight size={18} />
+        </button> : mapLoaded && !configurationLocked ? <div className="batch-map-picker"><MapPicker language={language} latitude={mapLatitude} longitude={mapLongitude} onChange={(latitude, longitude) => setGpsInput((current) => ({ ...current, latitude: latitude.toFixed(6), longitude: longitude.toFixed(6) }))} /></div> : null}
+        <div className="batch-metadata-fields batch-gps-optional">
           <label><span>{gpsCopy.altitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.altitude} onChange={(event) => assignGps("altitude", event.target.value)} placeholder="12.5" /></label>
           <label><span>{gpsCopy.direction}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.direction} onChange={(event) => assignGps("direction", event.target.value)} placeholder="90" /></label>
         </div>

@@ -457,6 +457,9 @@ a:focus-visible {
 .batch-metadata-fields label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .batch-metadata-fields label.wide { grid-column: 1 / -1; }
 .batch-metadata-fields input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper-strong); font-size: 14px; }
+.batch-map-consent { margin-top: 14px; }
+.batch-map-picker { margin-top: 14px; }
+.batch-gps-optional { margin-top: 14px; }
 .batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .batch-hint { margin-top: 12px; }
 .batch-error, .batch-warning { display: flex; gap: 7px; align-items: center; margin: 14px 0 0; color: var(--danger); font-size: 13px; }
