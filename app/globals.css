@@ -447,9 +447,15 @@ a:focus-visible {
 .batch-heading p, .batch-hint, .batch-footer p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .batch-controls { flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .batch-operation { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
-.batch-operation button { min-height: 38px; border: 0; border-radius: 6px; padding: 0 13px; background: transparent; cursor: pointer; font-size: 13px; font-weight: 700; }
+.batch-operation button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 6px; padding: 0 13px; background: transparent; cursor: pointer; font-size: 13px; font-weight: 700; }
 .batch-operation button.active { color: white; background: var(--ink-green); }
 .batch-operation button:disabled { cursor: not-allowed; opacity: .55; }
+.batch-metadata { width: 100%; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: rgba(238, 243, 240, 0.72); }
+.batch-metadata h3 { margin: 0; font-size: 15px; }.batch-metadata p { margin: 5px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.batch-metadata-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.batch-metadata-fields label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.batch-metadata-fields label.wide { grid-column: 1 / -1; }
+.batch-metadata-fields input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper-strong); font-size: 14px; }
 .batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .batch-hint { margin-top: 12px; }
 .batch-error { display: flex; gap: 7px; align-items: center; margin: 14px 0 0; color: var(--danger); font-size: 13px; }
@@ -1802,6 +1808,8 @@ footer p {
   .batch-actions .secondary-button { justify-content: center; }
   .batch-operation { width: 100%; }
   .batch-operation button { flex: 1; }
+  .batch-metadata-fields { grid-template-columns: 1fr; }
+  .batch-metadata-fields label.wide { grid-column: auto; }
   .batch-footer > div { width: 100%; justify-content: stretch; }
   .batch-footer > div button { flex: 1; justify-content: center; }
   .site-header {

@@ -17,7 +17,7 @@ import {
   semanticValueFromFields,
   semanticWriteTags,
 } from "../app/metadata/semantic";
-import { batchDeletionTags } from "../app/batch-processor";
+import { batchDeletionTags, batchTextEditsAreVerified, batchTextWriteTags, hasBatchTextEdits } from "../app/batch-processor";
 
 const labels = {
   artist: "Artist",
@@ -264,6 +264,29 @@ test("builds isolated batch deletion operations without dropping XMP GPS aliases
     "PreviewImage",
     "EXIF:SerialNumber",
   ]);
+  assert.deepEqual(batchDeletionTags(fields, "metadata"), []);
+});
+
+test("builds synchronized batch text writes while leaving blank fields untouched", () => {
+  const edits = { artist: "Alice", keywords: "travel, Shanghai", city: "" };
+  assert.equal(hasBatchTextEdits(edits), true);
+  assert.equal(hasBatchTextEdits({ city: "  " }), false);
+  assert.deepEqual(batchTextWriteTags(edits), {
+    "EXIF:Artist": "Alice",
+    "XMP-dc:Creator": "Alice",
+    "IPTC:By-line": "Alice",
+    "XMP-dc:Subject": ["travel", "Shanghai"],
+    "IPTC:Keywords": ["travel", "Shanghai"],
+  });
+  const written = normalizeExifToolFields({
+    "EXIF:Artist": "Alice",
+    "XMP-dc:Creator": "Alice",
+    "IPTC:By-line": "Alice",
+    "XMP-dc:Subject": ["travel", "Shanghai"],
+    "IPTC:Keywords": ["travel", "Shanghai"],
+  });
+  assert.equal(batchTextEditsAreVerified(written, edits), true);
+  assert.equal(batchTextEditsAreVerified(written, { artist: "Other" }), false);
 });
 
 test("exposes every planned advanced deletion target", () => {

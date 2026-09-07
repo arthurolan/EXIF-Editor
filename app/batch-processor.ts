@@ -2,9 +2,12 @@ import { outputNameFor } from "./export-delivery.mjs";
 import { gpsDeletionTags, isGpsLocationMetadataField, privacySerialDeletionTagsForPreset, remainingDeletionTargets, remainingPrivacySerialFields } from "./metadata/clean";
 import { fileForMetadataWrite, formatSafetyFromBuffer, imageDataDigest, imageFormatFromFile } from "./metadata/formats";
 import { CLEANUP_PRESETS, normalizeExifToolFields, type MetadataField } from "./metadata/schema";
+import { semanticValueFromFields, semanticWriteTags, type SemanticFieldKey } from "./metadata/semantic";
 
-export type BatchOperation = "privacy" | "removeGps";
+export type BatchOperation = "privacy" | "removeGps" | "metadata";
 export type BatchPhase = "reading" | "writing" | "verifying";
+export type BatchTextField = Extract<SemanticFieldKey, "artist" | "copyright" | "keywords" | "city" | "country">;
+export type BatchTextEdits = Partial<Record<BatchTextField, string>>;
 
 export type BatchProcessResult =
   | { success: true; file: File }
@@ -37,16 +40,34 @@ const verificationFields = (fields: MetadataField[], format: string): MetadataFi
       : fields;
 
 export const batchDeletionTags = (fields: MetadataField[], operation: BatchOperation): string[] => {
+  if (operation === "metadata") return [];
   const gpsTargets = gpsDeletionTags(fields);
   const cleanupTargets = operation === "privacy" ? [...CLEANUP_PRESETS.privacy.tags] : [];
   const serialTargets = operation === "privacy" ? privacySerialDeletionTagsForPreset(fields, "privacy") : [];
   return [...new Set([...gpsTargets, ...cleanupTargets, ...serialTargets])];
 };
 
+export const hasBatchTextEdits = (edits: BatchTextEdits): boolean =>
+  Object.values(edits).some((value) => Boolean(value?.trim()));
+
+export const batchTextWriteTags = (edits: BatchTextEdits): Record<string, string | string[]> => {
+  const tags: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(edits) as Array<[BatchTextField, string | undefined]>) {
+    if (value?.trim()) Object.assign(tags, semanticWriteTags(key, value.trim()));
+  }
+  return tags;
+};
+
+export const batchTextEditsAreVerified = (fields: MetadataField[], edits: BatchTextEdits): boolean =>
+  (Object.entries(edits) as Array<[BatchTextField, string | undefined]>).every(
+    ([key, value]) => !value?.trim() || semanticValueFromFields(fields, key) === value.trim(),
+  );
+
 /** Processes one file only. The caller owns queueing so no two WASM writes overlap. */
 export const processBatchFile = async (
   file: File,
   operation: BatchOperation,
+  textEdits: BatchTextEdits,
   onPhase: (phase: BatchPhase) => void,
 ): Promise<BatchProcessResult> => {
   const format = imageFormatFromFile(file);
@@ -62,13 +83,21 @@ export const processBatchFile = async (
     if (!inputMetadata.success) return { success: false, reason: inputMetadata.error || "Metadata could not be read." };
     const fields = normalizeExifToolFields(inputMetadata.data);
     const deletionTargets = batchDeletionTags(fields, operation);
-    const tags: Record<string, string> = Object.fromEntries(deletionTargets.map((tag) => [tag, ""]));
+    const tags: Record<string, string | string[]> = {
+      ...Object.fromEntries(deletionTargets.map((tag) => [tag, ""])),
+      ...(operation === "metadata" ? batchTextWriteTags(textEdits) : {}),
+    };
+    if (operation === "metadata" && !hasBatchTextEdits(textEdits)) {
+      return { success: false, reason: "Choose at least one text field to write." };
+    }
+    const hasIptcTextWrite = Object.keys(tags).some((tag) => tag.startsWith("IPTC:") && tags[tag] !== "");
+    if (hasIptcTextWrite) tags["IPTC:CodedCharacterSet"] = "UTF8";
 
     onPhase("writing");
     const result = await writeMetadataInWorker(
       await fileForMetadataWrite(file, format.format),
       tags,
-      ["-charset", "UTF8"],
+      hasIptcTextWrite ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"] : ["-charset", "UTF8"],
       (phase) => onPhase(phase === "loading" ? "reading" : "writing"),
     );
     if (!result.success) return { success: false, reason: result.error || "Metadata write failed." };
@@ -79,12 +108,16 @@ export const processBatchFile = async (
     const verified = await readMetadataInWorker(output);
     if (!verified.success) return { success: false, reason: "The exported file could not be verified." };
     const outputFields = verificationFields(normalizeExifToolFields(verified.data), format.format);
-    if (outputFields.some(isGpsLocationMetadataField)) return { success: false, reason: "GPS verification failed; this copy was not delivered." };
+    const removesGps = operation === "privacy" || operation === "removeGps";
+    if (removesGps && outputFields.some(isGpsLocationMetadataField)) return { success: false, reason: "GPS verification failed; this copy was not delivered." };
     if (remainingDeletionTargets(outputFields, deletionTargets).length) {
       return { success: false, reason: "Privacy-cleanup verification failed; this copy was not delivered." };
     }
     if (operation === "privacy" && remainingPrivacySerialFields(outputFields).length) {
       return { success: false, reason: "Serial-number privacy verification failed; this copy was not delivered." };
+    }
+    if (operation === "metadata" && !batchTextEditsAreVerified(outputFields, textEdits)) {
+      return { success: false, reason: "Text metadata verification failed; this copy was not delivered." };
     }
     const sameImageData = format.format === "heic"
       ? formatSafetyFromBuffer(result.data, format.format).writable

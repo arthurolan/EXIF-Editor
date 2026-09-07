@@ -1,6 +1,6 @@
 {
   "name": "yingke-exif",
-  "version": "2.1.0-alpha.0",
+  "version": "2.1.0-beta.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
