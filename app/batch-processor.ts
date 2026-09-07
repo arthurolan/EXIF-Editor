@@ -4,10 +4,11 @@ import { fileForMetadataWrite, formatSafetyFromBuffer, imageDataDigest, imageFor
 import { CLEANUP_PRESETS, normalizeExifToolFields, type MetadataField } from "./metadata/schema";
 import { semanticValueFromFields, semanticWriteTags, type SemanticFieldKey } from "./metadata/semantic";
 
-export type BatchOperation = "privacy" | "removeGps" | "metadata";
+export type BatchOperation = "privacy" | "removeGps" | "metadata" | "shiftTime";
 export type BatchPhase = "reading" | "writing" | "verifying";
 export type BatchTextField = Extract<SemanticFieldKey, "artist" | "copyright" | "keywords" | "city" | "country">;
 export type BatchTextEdits = Partial<Record<BatchTextField, string>>;
+export type BatchTimeOffset = { days: number; hours: number; minutes: number };
 
 export type BatchProcessResult =
   | { success: true; file: File; skippedTextFields?: BatchTextField[] }
@@ -42,7 +43,7 @@ const verificationFields = (fields: MetadataField[], format: string): MetadataFi
       : fields;
 
 export const batchDeletionTags = (fields: MetadataField[], operation: BatchOperation): string[] => {
-  if (operation === "metadata") return [];
+  if (operation === "metadata" || operation === "shiftTime") return [];
   const gpsTargets = gpsDeletionTags(fields);
   const cleanupTargets = operation === "privacy" ? [...CLEANUP_PRESETS.privacy.tags] : [];
   const serialTargets = operation === "privacy" ? privacySerialDeletionTagsForPreset(fields, "privacy") : [];
@@ -83,11 +84,29 @@ export const batchTextEditsAreVerified = (fields: MetadataField[], edits: BatchT
     ([key, value]) => !value?.trim() || semanticValueFromFields(fields, key) === value.trim(),
   );
 
+const padDatePart = (value: number): string => String(value).padStart(2, "0");
+
+/** Adds a calendar-time offset without converting the photo's local timestamp to UTC. */
+export const offsetExifDateTime = (value: string, offset: BatchTimeOffset): string | null => {
+  const match = value.trim().match(/^(\d{4})[:-](\d{2})[:-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return null;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText = "0"] = match;
+  const year = Number(yearText); const month = Number(monthText); const day = Number(dayText);
+  const hour = Number(hourText); const minute = Number(minuteText); const second = Number(secondText);
+  if (![year, month, day, hour, minute, second, offset.days, offset.hours, offset.minutes].every(Number.isFinite)) return null;
+  const source = new Date(year, month - 1, day, hour, minute, second);
+  if (source.getFullYear() !== year || source.getMonth() !== month - 1 || source.getDate() !== day || source.getHours() !== hour || source.getMinutes() !== minute || source.getSeconds() !== second) return null;
+  const shifted = new Date(source.getTime() + (offset.days * 1440 + offset.hours * 60 + offset.minutes) * 60_000);
+  if (Number.isNaN(shifted.getTime())) return null;
+  return `${shifted.getFullYear()}:${padDatePart(shifted.getMonth() + 1)}:${padDatePart(shifted.getDate())} ${padDatePart(shifted.getHours())}:${padDatePart(shifted.getMinutes())}:${padDatePart(shifted.getSeconds())}`;
+};
+
 /** Processes one file only. The caller owns queueing so no two WASM writes overlap. */
 export const processBatchFile = async (
   file: File,
   operation: BatchOperation,
   textEdits: BatchTextEdits,
+  timeOffset: BatchTimeOffset,
   onPhase: (phase: BatchPhase) => void,
 ): Promise<BatchProcessResult> => {
   const format = imageFormatFromFile(file);
@@ -104,22 +123,29 @@ export const processBatchFile = async (
     const inputMetadata = await readMetadataInWorker(file);
     if (!inputMetadata.success) return { success: false, reason: inputMetadata.error || "Metadata could not be read." };
     const fields = normalizeExifToolFields(inputMetadata.data);
+    const shiftedDateTime = operation === "shiftTime"
+      ? offsetExifDateTime(semanticValueFromFields(fields, "dateTime"), timeOffset)
+      : null;
+    if (operation === "shiftTime" && !shiftedDateTime) {
+      return { success: false, reason: "The original capture time could not be read or shifted; this copy was not delivered." };
+    }
     const deletionTargets = batchDeletionTags(fields, operation);
     const tags: Record<string, string | string[]> = {
       ...Object.fromEntries(deletionTargets.map((tag) => [tag, ""])),
       ...(operation === "metadata" ? batchTextWriteTags(effectiveTextEdits) : {}),
+      ...(shiftedDateTime ? semanticWriteTags("dateTime", shiftedDateTime) : {}),
     };
     if (operation === "metadata" && !hasBatchTextEdits(effectiveTextEdits)) {
       return { success: false, reason: "None of the requested text fields can be written to this format; this copy was not delivered." };
     }
-    const hasIptcTextWrite = Object.keys(tags).some((tag) => tag.startsWith("IPTC:") && tags[tag] !== "");
-    if (hasIptcTextWrite) tags["IPTC:CodedCharacterSet"] = "UTF8";
+    const hasIptcWrite = Object.keys(tags).some((tag) => tag.startsWith("IPTC:") && tags[tag] !== "");
+    if (hasIptcWrite) tags["IPTC:CodedCharacterSet"] = "UTF8";
 
     onPhase("writing");
     const result = await writeMetadataInWorker(
       await fileForMetadataWrite(file, format.format),
       tags,
-      hasIptcTextWrite ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"] : ["-charset", "UTF8"],
+      hasIptcWrite ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"] : ["-charset", "UTF8"],
       (phase) => onPhase(phase === "loading" ? "reading" : "writing"),
     );
     if (!result.success) return { success: false, reason: result.error || "Metadata write failed." };
@@ -140,6 +166,9 @@ export const processBatchFile = async (
     }
     if (operation === "metadata" && !batchTextEditsAreVerified(outputFields, effectiveTextEdits)) {
       return { success: false, reason: "Text metadata verification failed; this copy was not delivered." };
+    }
+    if (shiftedDateTime && offsetExifDateTime(semanticValueFromFields(outputFields, "dateTime"), { days: 0, hours: 0, minutes: 0 }) !== shiftedDateTime) {
+      return { success: false, reason: "Time-offset verification failed; this copy was not delivered." };
     }
     const sameImageData = format.format === "heic"
       ? formatSafetyFromBuffer(result.data, format.format).writable

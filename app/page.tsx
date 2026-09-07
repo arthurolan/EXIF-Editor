@@ -1404,7 +1404,7 @@ export default function Home() {
               {busy ? t.reading : t.choosePhoto}
             </button>
             <button className="batch-entry-button" type="button" onClick={() => setBatchMode(true)} disabled={busy}>
-              <ListChecks size={16} />{language === "zh" ? "批量隐私处理" : "Batch privacy processing"}
+              <ListChecks size={16} />{language === "zh" ? "批量照片处理" : "Batch photo processing"}
             </button>
             <div className="drop-meta">
               <span>JPEG / PNG / WebP / TIFF / HEIC</span>

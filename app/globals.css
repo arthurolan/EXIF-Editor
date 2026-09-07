@@ -453,6 +453,7 @@ a:focus-visible {
 .batch-metadata { width: 100%; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: rgba(238, 243, 240, 0.72); }
 .batch-metadata h3 { margin: 0; font-size: 15px; }.batch-metadata p { margin: 5px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .batch-metadata-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.batch-time-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .batch-metadata-fields label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .batch-metadata-fields label.wide { grid-column: 1 / -1; }
 .batch-metadata-fields input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper-strong); font-size: 14px; }

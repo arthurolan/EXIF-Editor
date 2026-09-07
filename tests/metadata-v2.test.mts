@@ -17,7 +17,7 @@ import {
   semanticValueFromFields,
   semanticWriteTags,
 } from "../app/metadata/semantic";
-import { batchDeletionTags, batchTextEditsAreVerified, batchTextEditsForFormat, batchTextWriteTags, hasBatchTextEdits, unavailableBatchTextFields } from "../app/batch-processor";
+import { batchDeletionTags, batchTextEditsAreVerified, batchTextEditsForFormat, batchTextWriteTags, hasBatchTextEdits, offsetExifDateTime, unavailableBatchTextFields } from "../app/batch-processor";
 
 const labels = {
   artist: "Artist",
@@ -294,6 +294,18 @@ test("preserves HEIC delivery when its compatible text fields verify", () => {
   assert.deepEqual(unavailableBatchTextFields("heic", edits), ["keywords", "city", "country"]);
   assert.deepEqual(batchTextEditsForFormat("heic", edits), { artist: "Alice", copyright: "© Alice" });
   assert.deepEqual(batchTextEditsForFormat("jpeg", edits), edits);
+});
+
+test("offsets EXIF capture times across calendar boundaries without UTC conversion", () => {
+  assert.equal(
+    offsetExifDateTime("2026:12:31 23:45:10", { days: 0, hours: 0, minutes: 30 }),
+    "2027:01:01 00:15:10",
+  );
+  assert.equal(
+    offsetExifDateTime("2026:03:01 00:10:00", { days: -1, hours: 0, minutes: -20 }),
+    "2026:02:27 23:50:00",
+  );
+  assert.equal(offsetExifDateTime("not a date", { days: 0, hours: 1, minutes: 0 }), null);
 });
 
 test("exposes every planned advanced deletion target", () => {
