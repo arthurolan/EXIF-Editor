@@ -139,6 +139,12 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
         <button type="button" role="radio" aria-checked={operation === "removeGps"} className={operation === "removeGps" ? "active" : ""} disabled={running || configurationLocked} onClick={() => setOperation("removeGps")}>{t.gps}</button>
         <button type="button" role="radio" aria-checked={operation === "metadata"} className={operation === "metadata" ? "active" : ""} disabled={running || configurationLocked} onClick={() => setOperation("metadata")}><PencilLine size={15} />{t.metadata}</button>
       </div>
+      <div className="batch-actions">
+        <button type="button" className="secondary-button" disabled={running || configurationLocked} onClick={() => inputRef.current?.click()}><ImagePlus size={16} />{t.choose}</button>
+        <button type="button" className="secondary-button" disabled={running || configurationLocked} onClick={() => folderRef.current?.click()}><FolderOpen size={16} />{t.folder}</button>
+      </div>
+      <input ref={inputRef} className="sr-only" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.heic,.heif,image/jpeg,image/png,image/webp,image/tiff,image/heic,image/heif" onChange={onFiles} />
+      <input ref={folderRef} className="sr-only" type="file" multiple {...folderProps} accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.heic,.heif,image/jpeg,image/png,image/webp,image/tiff,image/heic,image/heif" onChange={onFiles} />
       {operation === "metadata" && <section className="batch-metadata" aria-labelledby="batch-metadata-title">
         <div><h3 id="batch-metadata-title">{t.metadataTitle}</h3><p>{t.metadataHint}</p></div>
         <div className="batch-metadata-fields">
@@ -149,12 +155,6 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
           <label><span>{t.country}</span><input disabled={configurationLocked} value={textEdits.country} onChange={(event) => assignText("country", event.target.value)} placeholder={t.countryPlaceholder} /></label>
         </div>
       </section>}
-      <div className="batch-actions">
-        <button type="button" className="secondary-button" disabled={running || configurationLocked} onClick={() => inputRef.current?.click()}><ImagePlus size={16} />{t.choose}</button>
-        <button type="button" className="secondary-button" disabled={running || configurationLocked} onClick={() => folderRef.current?.click()}><FolderOpen size={16} />{t.folder}</button>
-      </div>
-      <input ref={inputRef} className="sr-only" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.heic,.heif,image/jpeg,image/png,image/webp,image/tiff,image/heic,image/heif" onChange={onFiles} />
-      <input ref={folderRef} className="sr-only" type="file" multiple {...folderProps} accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,.heic,.heif,image/jpeg,image/png,image/webp,image/tiff,image/heic,image/heif" onChange={onFiles} />
     </div>
     <p className="batch-hint">{t.limits} {t.folderHint}</p>
     {selectionError && <p className="batch-error" role="alert"><AlertTriangle size={16} />{selectionError}</p>}
