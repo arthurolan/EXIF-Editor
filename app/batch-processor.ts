@@ -1,6 +1,6 @@
 import { outputNameFor } from "./export-delivery.mjs";
 import { gpsDeletionTags, isGpsLocationMetadataField, privacySerialDeletionTagsForPreset, remainingDeletionTargets, remainingPrivacySerialFields } from "./metadata/clean";
-import { fileForMetadataWrite, formatSafetyFromBuffer, imageDataDigest, imageFormatFromFile } from "./metadata/formats";
+import { fileForMetadataWrite, formatSafetyFromBuffer, imageDataDigest, imageFormatFromFile, type SupportedImageFormat } from "./metadata/formats";
 import { CLEANUP_PRESETS, normalizeExifToolFields, type MetadataField } from "./metadata/schema";
 import { semanticValueFromFields, semanticWriteTags, type SemanticFieldKey } from "./metadata/semantic";
 
@@ -50,6 +50,14 @@ export const batchDeletionTags = (fields: MetadataField[], operation: BatchOpera
 export const hasBatchTextEdits = (edits: BatchTextEdits): boolean =>
   Object.values(edits).some((value) => Boolean(value?.trim()));
 
+export const batchOperationUnsupportedReason = (
+  format: SupportedImageFormat,
+  operation: BatchOperation,
+): string | null =>
+  format === "heic" && operation === "metadata"
+    ? "HEIC / HEIF text-metadata writing is not supported in batch mode. This file was not changed or delivered."
+    : null;
+
 export const batchTextWriteTags = (edits: BatchTextEdits): Record<string, string | string[]> => {
   const tags: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(edits) as Array<[BatchTextField, string | undefined]>) {
@@ -72,6 +80,8 @@ export const processBatchFile = async (
 ): Promise<BatchProcessResult> => {
   const format = imageFormatFromFile(file);
   if (!format) return { success: false, reason: "Unsupported image format." };
+  const unsupportedReason = batchOperationUnsupportedReason(format.format, operation);
+  if (unsupportedReason) return { success: false, reason: unsupportedReason };
 
   try {
     const safety = formatSafetyFromBuffer(await file.arrayBuffer(), format.format);

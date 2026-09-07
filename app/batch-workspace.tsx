@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Check, Download, FileImage, FolderOpen, ImagePlus, PencilLine, Play, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, Check, Download, FileImage, FolderOpen, ImagePlus, PencilLine, Play, RefreshCw, ShieldCheck, Volume2, X } from "lucide-react";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { hasBatchTextEdits, processBatchFile, type BatchOperation, type BatchPhase, type BatchTextEdits, type BatchTextField } from "./batch-processor";
 import { imageFormatFromFile } from "./metadata/formats";
@@ -12,14 +12,15 @@ const MAX_TOTAL_SIZE = 500 * 1024 * 1024;
 type QueueStatus = "waiting" | BatchPhase | "success" | "failed" | "cancelled";
 type QueueItem = { id: string; source: File; status: QueueStatus; reason?: string; output?: File };
 type Language = "zh" | "en";
+type CompletionState = "complete" | "stopped" | null;
 const EMPTY_TEXT_EDITS: BatchTextEdits = { artist: "", copyright: "", keywords: "", city: "", country: "" };
 
 const copy = {
   zh: {
-    title: "批量隐私处理", subtitle: "按顺序逐张写入和复核；未通过核验的副本不会交付。", choose: "选择多张照片", folder: "选择文件夹", back: "返回单张编辑", privacy: "隐私清理", gps: "删除 GPS", metadata: "写入文字", metadataTitle: "要写入全部照片的文字信息", metadataHint: "可先选择照片，再填写字段。点击开始处理时，这些设置会锁定并应用到整个队列；留空字段保持每张原有值。将同步写入兼容的 EXIF / XMP / IPTC 标签。", metadataRequired: "请先填写至少一个文字字段，再开始处理。", artist: "作者", copyright: "版权", keywords: "关键词", city: "城市", country: "国家/地区", artistPlaceholder: "摄影者姓名", copyrightPlaceholder: "© 2026 姓名", keywordsPlaceholder: "旅行, 胶片, 上海", cityPlaceholder: "例如 上海", countryPlaceholder: "例如 中国", start: "开始处理", stop: "处理完当前项后停止", retry: "重试失败项", clear: "清空队列", download: "下载", downloadZip: "下载 ZIP（全部成功项）", packingZip: "正在打包 ZIP", waiting: "等待中", reading: "读取中", writing: "写入中", verifying: "核验中", success: "已通过核验", failed: "失败", cancelled: "已停止", limits: "最多 100 个文件、总计 500 MB；单张最大 500 MB。", selectionError: "无法加入队列：仅支持当前支持的图片格式，且需符合文件数和容量上限。", skippedFiles: (count: number) => `已跳过 ${count} 个不支持或超出上限的文件；其余已加入队列。`, noFiles: "请选择至少一张可处理的照片。", progress: "进度", complete: "处理完成", noDelivery: "失败或未核验的文件不会提供下载。ZIP 仅包含已验证副本。", folderHint: "文件夹选择依赖 Chromium 浏览器；也可以直接多选文件。",
+    title: "批量隐私处理", subtitle: "按顺序逐张写入和复核；未通过核验的副本不会交付。", choose: "选择多张照片", folder: "选择文件夹", back: "返回单张编辑", privacy: "隐私清理", gps: "删除 GPS", metadata: "写入文字", metadataTitle: "要写入全部照片的文字信息", metadataHint: "可先选择照片，再填写字段。点击开始处理时，这些设置会锁定并应用到整个队列；留空字段保持每张原有值。将同步写入兼容的 EXIF / XMP / IPTC 标签。", metadataRequired: "请先填写至少一个文字字段，再开始处理。", heicTextWarning: "HEIC / HEIF 暂不支持批量写入文字；开始后会仅将这些文件标记为失败，其他文件继续处理。", artist: "作者", copyright: "版权", keywords: "关键词", city: "城市", country: "国家/地区", artistPlaceholder: "摄影者姓名", copyrightPlaceholder: "© 2026 姓名", keywordsPlaceholder: "旅行, 胶片, 上海", cityPlaceholder: "例如 上海", countryPlaceholder: "例如 中国", start: "开始处理", stop: "处理完当前项后停止", retry: "重试失败项", clear: "清空队列", download: "下载", downloadZip: "下载 ZIP（全部成功项）", packingZip: "正在打包 ZIP", waiting: "等待中", reading: "读取中", writing: "写入中", verifying: "核验中", success: "已通过核验", failed: "失败", cancelled: "已停止", limits: "最多 100 个文件、总计 500 MB；单张最大 500 MB。", selectionError: "无法加入队列：仅支持当前支持的图片格式，且需符合文件数和容量上限。", skippedFiles: (count: number) => `已跳过 ${count} 个不支持或超出上限的文件；其余已加入队列。`, noFiles: "请选择至少一张可处理的照片。", progress: "进度", processing: "正在处理", complete: "处理完成", stopped: "处理已停止", completedItems: (completed: number, total: number) => `已完成 ${completed} / ${total}`, currentFile: (phase: string, name: string) => `${phase}：${name}`, completionSummary: (success: number, failed: number) => `${success} 个已通过核验 · ${failed} 个失败`, completionSound: "完成提示音", noDelivery: "失败或未核验的文件不会提供下载。ZIP 仅包含已验证副本。", folderHint: "文件夹选择依赖 Chromium 浏览器；也可以直接多选文件。",
   },
   en: {
-    title: "Batch privacy processing", subtitle: "Files are written and verified one at a time. Unverified copies are never delivered.", choose: "Choose photos", folder: "Choose folder", back: "Back to single editor", privacy: "Privacy cleanup", gps: "Remove GPS", metadata: "Write text", metadataTitle: "Text metadata to write to every photo", metadataHint: "You can choose photos before filling fields. When processing starts, these settings lock and apply to the entire queue; blank fields keep each photo's existing value. Compatible EXIF / XMP / IPTC tags are synchronized.", metadataRequired: "Fill at least one text field before starting processing.", artist: "Author", copyright: "Copyright", keywords: "Keywords", city: "City", country: "Country / region", artistPlaceholder: "Photographer name", copyrightPlaceholder: "© 2026 Name", keywordsPlaceholder: "travel, film, Shanghai", cityPlaceholder: "e.g. Shanghai", countryPlaceholder: "e.g. China", start: "Start processing", stop: "Stop after current item", retry: "Retry failed", clear: "Clear queue", download: "Download", downloadZip: "Download ZIP (all verified copies)", packingZip: "Packing ZIP", waiting: "Waiting", reading: "Reading", writing: "Writing", verifying: "Verifying", success: "Verified", failed: "Failed", cancelled: "Stopped", limits: "Up to 100 files / 500 MB total; 500 MB per file.", selectionError: "Could not add files: use a supported image format within the file-count and size limits.", skippedFiles: (count: number) => `Skipped ${count} unsupported or over-limit file${count === 1 ? "" : "s"}; the rest joined the queue.`, noFiles: "Choose at least one processable photo.", progress: "Progress", complete: "Processing complete", noDelivery: "Failed or unverified files never receive a download. The ZIP contains verified copies only.", folderHint: "Folder selection depends on Chromium browsers; multi-file selection is always available.",
+    title: "Batch privacy processing", subtitle: "Files are written and verified one at a time. Unverified copies are never delivered.", choose: "Choose photos", folder: "Choose folder", back: "Back to single editor", privacy: "Privacy cleanup", gps: "Remove GPS", metadata: "Write text", metadataTitle: "Text metadata to write to every photo", metadataHint: "You can choose photos before filling fields. When processing starts, these settings lock and apply to the entire queue; blank fields keep each photo's existing value. Compatible EXIF / XMP / IPTC tags are synchronized.", metadataRequired: "Fill at least one text field before starting processing.", heicTextWarning: "Batch text writing is not yet supported for HEIC / HEIF. These files will be marked as failed while the other files continue.", artist: "Author", copyright: "Copyright", keywords: "Keywords", city: "City", country: "Country / region", artistPlaceholder: "Photographer name", copyrightPlaceholder: "© 2026 Name", keywordsPlaceholder: "travel, film, Shanghai", cityPlaceholder: "e.g. Shanghai", countryPlaceholder: "e.g. China", start: "Start processing", stop: "Stop after current item", retry: "Retry failed", clear: "Clear queue", download: "Download", downloadZip: "Download ZIP (all verified copies)", packingZip: "Packing ZIP", waiting: "Waiting", reading: "Reading", writing: "Writing", verifying: "Verifying", success: "Verified", failed: "Failed", cancelled: "Stopped", limits: "Up to 100 files / 500 MB total; 500 MB per file.", selectionError: "Could not add files: use a supported image format within the file-count and size limits.", skippedFiles: (count: number) => `Skipped ${count} unsupported or over-limit file${count === 1 ? "" : "s"}; the rest joined the queue.`, noFiles: "Choose at least one processable photo.", progress: "Progress", processing: "Processing", complete: "Processing complete", stopped: "Processing stopped", completedItems: (completed: number, total: number) => `${completed} / ${total} complete`, currentFile: (phase: string, name: string) => `${phase}: ${name}`, completionSummary: (success: number, failed: number) => `${success} verified · ${failed} failed`, completionSound: "Completion sound", noDelivery: "Failed or unverified files never receive a download. The ZIP contains verified copies only.", folderHint: "Folder selection depends on Chromium browsers; multi-file selection is always available.",
   },
 } as const;
 
@@ -30,10 +31,12 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const stopRef = useRef(false);
+  const completionAudioRef = useRef<AudioContext | null>(null);
   const [operation, setOperation] = useState<BatchOperation>("privacy");
   const [textEdits, setTextEdits] = useState<BatchTextEdits>(EMPTY_TEXT_EDITS);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [running, setRunning] = useState(false);
+  const [completionState, setCompletionState] = useState<CompletionState>(null);
   const [configurationLocked, setConfigurationLocked] = useState(false);
   const [selectionError, setSelectionError] = useState("");
   const [selectionNotice, setSelectionNotice] = useState("");
@@ -42,12 +45,42 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const [zipError, setZipError] = useState("");
 
   const counts = useMemo(() => ({
-    completed: items.filter((item) => item.status === "success" || item.status === "failed").length,
+    completed: items.filter((item) => item.status === "success" || item.status === "failed" || item.status === "cancelled").length,
     success: items.filter((item) => item.status === "success").length,
     failed: items.filter((item) => item.status === "failed").length,
     totalSize: items.reduce((sum, item) => sum + item.source.size, 0),
   }), [items]);
   const metadataReady = hasBatchTextEdits(textEdits);
+  const currentItem = items.find((item) => item.status === "reading" || item.status === "writing" || item.status === "verifying");
+  const progressPercent = items.length ? Math.round((counts.completed / items.length) * 100) : 0;
+  const containsHeic = items.some((item) => imageFormatFromFile(item.source)?.format === "heic");
+
+  const prepareCompletionSound = () => {
+    if (typeof window === "undefined" || !window.AudioContext) return;
+    const context = completionAudioRef.current ?? new window.AudioContext();
+    completionAudioRef.current = context;
+    void context.resume().catch(() => undefined);
+  };
+
+  const playCompletionSound = () => {
+    const context = completionAudioRef.current;
+    if (!context || context.state !== "running") return;
+    const gain = context.createGain();
+    gain.connect(context.destination);
+    const start = context.currentTime + 0.02;
+    [880, 1175].forEach((frequency, index) => {
+      const oscillator = context.createOscillator();
+      const toneStart = start + index * 0.16;
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, toneStart);
+      oscillator.connect(gain);
+      oscillator.start(toneStart);
+      oscillator.stop(toneStart + 0.12);
+    });
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.09, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.36);
+  };
 
   const addFiles = (files: FileList | null) => {
     if (!files || running || configurationLocked) return;
@@ -66,7 +99,10 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       if (accepted.length) setSelectionNotice(t.skippedFiles(skipped));
       else setSelectionError(t.selectionError);
     }
-    if (accepted.length) setItems((current) => [...current, ...accepted]);
+    if (accepted.length) {
+      setCompletionState(null);
+      setItems((current) => [...current, ...accepted]);
+    }
   };
 
   const onFiles = (event: ChangeEvent<HTMLInputElement>) => {
@@ -84,6 +120,8 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       return;
     }
     stopRef.current = false;
+    prepareCompletionSound();
+    setCompletionState(null);
     setConfigurationLocked(true);
     setRunning(true);
     const selectedOperation = operation;
@@ -98,6 +136,8 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       if (result.success) update(item.id, { status: "success", output: result.file });
       else update(item.id, { status: "failed", reason: result.reason });
     }
+    setCompletionState(stopRef.current ? "stopped" : "complete");
+    playCompletionSound();
     setRunning(false);
   };
 
@@ -160,7 +200,14 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
     {selectionError && <p className="batch-error" role="alert"><AlertTriangle size={16} />{selectionError}</p>}
     {selectionNotice && <p className="batch-notice" role="status"><Check size={16} />{selectionNotice}</p>}
     {zipError && <p className="batch-error" role="alert"><AlertTriangle size={16} />{zipError}</p>}
-    <div className="batch-summary"><strong>{t.progress}</strong><span>{counts.completed} / {items.length}</span><span>{formatBytes(counts.totalSize)}</span><span>{counts.success} {t.success} · {counts.failed} {t.failed}</span></div>
+    {operation === "metadata" && containsHeic && <p className="batch-warning" role="status"><AlertTriangle size={16} />{t.heicTextWarning}</p>}
+    <div className={`batch-summary ${running ? "is-running" : completionState ? "is-complete" : ""}`} role="status" aria-live="polite">
+      <div className="batch-progress-heading"><strong>{running ? t.processing : completionState === "stopped" ? t.stopped : completionState === "complete" ? t.complete : t.progress}</strong><strong>{progressPercent}%</strong></div>
+      <div className="batch-progress-track" aria-hidden="true"><span style={{ width: `${progressPercent}%` }} /></div>
+      <div className="batch-progress-detail">
+        {running && currentItem ? <span>{t.currentFile(statusLabel(currentItem.status), currentItem.source.name)}</span> : completionState ? <><Check size={15} />{t.completionSummary(counts.success, counts.failed)}<span className="batch-sound"><Volume2 size={15} />{t.completionSound}</span></> : <><span>{t.completedItems(counts.completed, items.length)}</span><span>{formatBytes(counts.totalSize)}</span><span>{counts.success} {t.success} · {counts.failed} {t.failed}</span></>}
+      </div>
+    </div>
     <div className="batch-list" aria-live="polite">
       {items.length === 0 ? <div className="batch-empty"><FileImage size={24} />{t.noFiles}</div> : items.map((item) => <article className={`batch-row status-${item.status}`} key={item.id}>
         <FileImage size={18} /><div><strong>{item.source.name}</strong><small>{formatBytes(item.source.size)} · {statusLabel(item.status)}{item.reason ? ` · ${item.reason}` : ""}</small></div>
@@ -171,7 +218,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       <div>
         {counts.success > 0 && <button type="button" className="secondary-button" disabled={running || zipBusy} onClick={() => void downloadZip()}><Download className={zipBusy ? "spin" : undefined} size={16} />{zipBusy && zipProgress ? `${t.packingZip} ${zipProgress[0]} / ${zipProgress[1]}` : t.downloadZip}</button>}
         {counts.failed > 0 && !running && <button type="button" className="secondary-button" onClick={() => void run(true)}><RefreshCw size={16} />{t.retry}</button>}
-        {items.length > 0 && !running && <button type="button" className="text-button" onClick={() => { setItems([]); setConfigurationLocked(false); }}>{t.clear}</button>}
+        {items.length > 0 && !running && <button type="button" className="text-button" onClick={() => { setItems([]); setConfigurationLocked(false); setCompletionState(null); }}>{t.clear}</button>}
         {running ? <button type="button" className="secondary-button" onClick={() => { stopRef.current = true; }}>{t.stop}</button> : <button type="button" className="primary-button" disabled={!items.some((item) => item.status === "waiting" || item.status === "cancelled") || (operation === "metadata" && !metadataReady)} onClick={() => void run()}><Play size={16} />{t.start}</button>}
       </div>
     </div>

@@ -17,7 +17,7 @@ import {
   semanticValueFromFields,
   semanticWriteTags,
 } from "../app/metadata/semantic";
-import { batchDeletionTags, batchTextEditsAreVerified, batchTextWriteTags, hasBatchTextEdits } from "../app/batch-processor";
+import { batchDeletionTags, batchOperationUnsupportedReason, batchTextEditsAreVerified, batchTextWriteTags, hasBatchTextEdits } from "../app/batch-processor";
 
 const labels = {
   artist: "Artist",
@@ -287,6 +287,12 @@ test("builds synchronized batch text writes while leaving blank fields untouched
   });
   assert.equal(batchTextEditsAreVerified(written, edits), true);
   assert.equal(batchTextEditsAreVerified(written, { artist: "Other" }), false);
+});
+
+test("does not report unsupported HEIC text writing as a successful batch operation", () => {
+  assert.match(batchOperationUnsupportedReason("heic", "metadata") ?? "", /not supported/i);
+  assert.equal(batchOperationUnsupportedReason("heic", "privacy"), null);
+  assert.equal(batchOperationUnsupportedReason("jpeg", "metadata"), null);
 });
 
 test("exposes every planned advanced deletion target", () => {
