@@ -17,7 +17,7 @@ import {
   semanticValueFromFields,
   semanticWriteTags,
 } from "../app/metadata/semantic";
-import { batchDeletionTags, batchOperationUnsupportedReason, batchTextEditsAreVerified, batchTextWriteTags, hasBatchTextEdits } from "../app/batch-processor";
+import { batchDeletionTags, batchTextEditsAreVerified, batchTextEditsForFormat, batchTextWriteTags, hasBatchTextEdits, unavailableBatchTextFields } from "../app/batch-processor";
 
 const labels = {
   artist: "Artist",
@@ -289,10 +289,11 @@ test("builds synchronized batch text writes while leaving blank fields untouched
   assert.equal(batchTextEditsAreVerified(written, { artist: "Other" }), false);
 });
 
-test("does not report unsupported HEIC text writing as a successful batch operation", () => {
-  assert.match(batchOperationUnsupportedReason("heic", "metadata") ?? "", /not supported/i);
-  assert.equal(batchOperationUnsupportedReason("heic", "privacy"), null);
-  assert.equal(batchOperationUnsupportedReason("jpeg", "metadata"), null);
+test("preserves HEIC delivery when its compatible text fields verify", () => {
+  const edits = { artist: "Alice", copyright: "© Alice", keywords: "travel", city: "Shanghai", country: "China" };
+  assert.deepEqual(unavailableBatchTextFields("heic", edits), ["keywords", "city", "country"]);
+  assert.deepEqual(batchTextEditsForFormat("heic", edits), { artist: "Alice", copyright: "© Alice" });
+  assert.deepEqual(batchTextEditsForFormat("jpeg", edits), edits);
 });
 
 test("exposes every planned advanced deletion target", () => {

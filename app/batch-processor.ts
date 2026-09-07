@@ -10,8 +10,10 @@ export type BatchTextField = Extract<SemanticFieldKey, "artist" | "copyright" | 
 export type BatchTextEdits = Partial<Record<BatchTextField, string>>;
 
 export type BatchProcessResult =
-  | { success: true; file: File }
+  | { success: true; file: File; skippedTextFields?: BatchTextField[] }
   | { success: false; reason: string };
+
+const HEIC_UNSUPPORTED_BATCH_TEXT_FIELDS: BatchTextField[] = ["keywords", "city", "country"];
 
 const tiffImageFields = new Set([
   "NewSubfileType", "SubfileType", "ImageWidth", "ImageHeight", "BitsPerSample", "Compression",
@@ -50,13 +52,23 @@ export const batchDeletionTags = (fields: MetadataField[], operation: BatchOpera
 export const hasBatchTextEdits = (edits: BatchTextEdits): boolean =>
   Object.values(edits).some((value) => Boolean(value?.trim()));
 
-export const batchOperationUnsupportedReason = (
+export const unavailableBatchTextFields = (
   format: SupportedImageFormat,
-  operation: BatchOperation,
-): string | null =>
-  format === "heic" && operation === "metadata"
-    ? "HEIC / HEIF text-metadata writing is not supported in batch mode. This file was not changed or delivered."
-    : null;
+  edits: BatchTextEdits,
+): BatchTextField[] =>
+  format === "heic"
+    ? HEIC_UNSUPPORTED_BATCH_TEXT_FIELDS.filter((field) => Boolean(edits[field]?.trim()))
+    : [];
+
+export const batchTextEditsForFormat = (
+  format: SupportedImageFormat,
+  edits: BatchTextEdits,
+): BatchTextEdits => {
+  if (format !== "heic") return { ...edits };
+  const compatible = { ...edits };
+  for (const field of HEIC_UNSUPPORTED_BATCH_TEXT_FIELDS) delete compatible[field];
+  return compatible;
+};
 
 export const batchTextWriteTags = (edits: BatchTextEdits): Record<string, string | string[]> => {
   const tags: Record<string, string | string[]> = {};
@@ -80,8 +92,8 @@ export const processBatchFile = async (
 ): Promise<BatchProcessResult> => {
   const format = imageFormatFromFile(file);
   if (!format) return { success: false, reason: "Unsupported image format." };
-  const unsupportedReason = batchOperationUnsupportedReason(format.format, operation);
-  if (unsupportedReason) return { success: false, reason: unsupportedReason };
+  const skippedTextFields = operation === "metadata" ? unavailableBatchTextFields(format.format, textEdits) : [];
+  const effectiveTextEdits = operation === "metadata" ? batchTextEditsForFormat(format.format, textEdits) : textEdits;
 
   try {
     const safety = formatSafetyFromBuffer(await file.arrayBuffer(), format.format);
@@ -95,10 +107,10 @@ export const processBatchFile = async (
     const deletionTargets = batchDeletionTags(fields, operation);
     const tags: Record<string, string | string[]> = {
       ...Object.fromEntries(deletionTargets.map((tag) => [tag, ""])),
-      ...(operation === "metadata" ? batchTextWriteTags(textEdits) : {}),
+      ...(operation === "metadata" ? batchTextWriteTags(effectiveTextEdits) : {}),
     };
-    if (operation === "metadata" && !hasBatchTextEdits(textEdits)) {
-      return { success: false, reason: "Choose at least one text field to write." };
+    if (operation === "metadata" && !hasBatchTextEdits(effectiveTextEdits)) {
+      return { success: false, reason: "None of the requested text fields can be written to this format; this copy was not delivered." };
     }
     const hasIptcTextWrite = Object.keys(tags).some((tag) => tag.startsWith("IPTC:") && tags[tag] !== "");
     if (hasIptcTextWrite) tags["IPTC:CodedCharacterSet"] = "UTF8";
@@ -126,14 +138,14 @@ export const processBatchFile = async (
     if (operation === "privacy" && remainingPrivacySerialFields(outputFields).length) {
       return { success: false, reason: "Serial-number privacy verification failed; this copy was not delivered." };
     }
-    if (operation === "metadata" && !batchTextEditsAreVerified(outputFields, textEdits)) {
+    if (operation === "metadata" && !batchTextEditsAreVerified(outputFields, effectiveTextEdits)) {
       return { success: false, reason: "Text metadata verification failed; this copy was not delivered." };
     }
     const sameImageData = format.format === "heic"
       ? formatSafetyFromBuffer(result.data, format.format).writable
       : await imageDataDigest(file, format.format) === await imageDataDigest(output, format.format);
     if (!sameImageData) return { success: false, reason: "Image-data verification failed; this copy was not delivered." };
-    return { success: true, file: output };
+    return { success: true, file: output, ...(skippedTextFields.length ? { skippedTextFields } : {}) };
   } catch (cause) {
     return { success: false, reason: cause instanceof Error ? cause.message : "Unexpected processing error." };
   }
