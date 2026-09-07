@@ -446,7 +446,7 @@ a:focus-visible {
 .batch-heading h2 { margin: 0; font-size: 24px; }
 .batch-heading p, .batch-hint, .batch-footer p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .batch-controls { flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-.batch-operation { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.batch-operation { display: inline-flex; flex-wrap: wrap; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
 .batch-operation button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 6px; padding: 0 13px; background: transparent; cursor: pointer; font-size: 13px; font-weight: 700; }
 .batch-operation button.active { color: white; background: var(--ink-green); }
 .batch-operation button:disabled { cursor: not-allowed; opacity: .55; }

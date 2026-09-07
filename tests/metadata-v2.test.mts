@@ -17,7 +17,7 @@ import {
   semanticValueFromFields,
   semanticWriteTags,
 } from "../app/metadata/semantic";
-import { batchDeletionTags, batchTextEditsAreVerified, batchTextEditsForFormat, batchTextWriteTags, hasBatchTextEdits, offsetExifDateTime, unavailableBatchTextFields } from "../app/batch-processor";
+import { batchDeletionTags, batchGpsEditsAreVerified, batchGpsWriteTags, batchTextEditsAreVerified, batchTextEditsForFormat, batchTextWriteTags, hasBatchTextEdits, offsetExifDateTime, parseBatchGpsEdits, unavailableBatchTextFields } from "../app/batch-processor";
 
 const labels = {
   artist: "Artist",
@@ -306,6 +306,21 @@ test("offsets EXIF capture times across calendar boundaries without UTC conversi
     "2026:02:27 23:50:00",
   );
   assert.equal(offsetExifDateTime("not a date", { days: 0, hours: 1, minutes: 0 }), null);
+});
+
+test("writes and verifies batch GPS coordinates with optional altitude and direction", () => {
+  const gps = parseBatchGpsEdits({ latitude: "-33.8688", longitude: "151.2093", altitude: "-3.5", direction: "90", });
+  assert.deepEqual(gps, { latitude: -33.8688, longitude: 151.2093, altitude: -3.5, direction: 90 });
+  assert.deepEqual(batchGpsWriteTags(gps!), {
+    GPSLatitude: 33.8688, GPSLatitudeRef: "S", GPSLongitude: 151.2093, GPSLongitudeRef: "E",
+    GPSAltitude: 3.5, GPSAltitudeRef: 1, GPSImgDirection: 90, GPSImgDirectionRef: "T",
+  });
+  const verified = normalizeExifToolFields({
+    "GPS:GPSLatitude": "33.8688", "GPS:GPSLatitudeRef": "S", "GPS:GPSLongitude": "151.2093", "GPS:GPSLongitudeRef": "E",
+    "GPS:GPSAltitude": "3.5", "GPS:GPSAltitudeRef": "1", "GPS:GPSImgDirection": "90",
+  });
+  assert.equal(batchGpsEditsAreVerified(verified, gps!), true);
+  assert.equal(parseBatchGpsEdits({ latitude: "91", longitude: "0", altitude: "", direction: "" }), null);
 });
 
 test("exposes every planned advanced deletion target", () => {

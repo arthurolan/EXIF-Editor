@@ -1,8 +1,8 @@
 "use client";
 
-import { AlertTriangle, Check, Clock3, Download, FileImage, FolderOpen, ImagePlus, PencilLine, Play, RefreshCw, ShieldCheck, Volume2, X } from "lucide-react";
+import { AlertTriangle, Check, Clock3, Download, FileImage, FolderOpen, ImagePlus, MapPin, PencilLine, Play, RefreshCw, ShieldCheck, Volume2, X } from "lucide-react";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
-import { hasBatchTextEdits, processBatchFile, type BatchOperation, type BatchPhase, type BatchTextEdits, type BatchTextField, type BatchTimeOffset } from "./batch-processor";
+import { hasBatchTextEdits, parseBatchGpsEdits, processBatchFile, type BatchGpsInput, type BatchOperation, type BatchPhase, type BatchTextEdits, type BatchTextField, type BatchTimeOffset } from "./batch-processor";
 import { imageFormatFromFile } from "./metadata/formats";
 
 const MAX_FILES = 100;
@@ -15,6 +15,11 @@ type Language = "zh" | "en";
 type CompletionState = "complete" | "stopped" | null;
 const EMPTY_TEXT_EDITS: BatchTextEdits = { artist: "", copyright: "", keywords: "", city: "", country: "" };
 const EMPTY_TIME_OFFSET: BatchTimeOffset = { days: 0, hours: 0, minutes: 0 };
+const EMPTY_GPS_INPUT: BatchGpsInput = { latitude: "", longitude: "", altitude: "", direction: "" };
+const GPS_COPY = {
+  zh: { action: "写入 GPS", title: "要写入全部照片的位置", hint: "坐标以 WGS‑84 写入。纬度和经度必填；海拔、拍摄方向可选，留空时保持每张照片原有值。南纬和西经使用负数。", latitude: "纬度", longitude: "经度", altitude: "海拔（米，可选）", direction: "拍摄方向（0–359°，可选）", invalid: "请填写有效的纬度（−90 至 90）和经度（−180 至 180）；方向须为 0–359。" },
+  en: { action: "Write GPS", title: "Location to write to every photo", hint: "Coordinates are written in WGS‑84. Latitude and longitude are required; altitude and direction are optional and keep each photo's existing value when blank. Use negative values for south and west.", latitude: "Latitude", longitude: "Longitude", altitude: "Altitude (metres, optional)", direction: "Direction (0–359°, optional)", invalid: "Enter a valid latitude (−90 to 90) and longitude (−180 to 180); direction must be 0–359." },
+} as const;
 
 const copy = {
   zh: {
@@ -29,6 +34,7 @@ const formatBytes = (size: number) => size < 1024 * 1024 ? `${(size / 1024).toFi
 
 export function BatchWorkspace({ language, onClose }: { language: Language; onClose: () => void }) {
   const t = copy[language];
+  const gpsCopy = GPS_COPY[language];
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const stopRef = useRef(false);
@@ -36,6 +42,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const [operation, setOperation] = useState<BatchOperation>("privacy");
   const [textEdits, setTextEdits] = useState<BatchTextEdits>(EMPTY_TEXT_EDITS);
   const [timeOffset, setTimeOffset] = useState<BatchTimeOffset>(EMPTY_TIME_OFFSET);
+  const [gpsInput, setGpsInput] = useState<BatchGpsInput>(EMPTY_GPS_INPUT);
   const [items, setItems] = useState<QueueItem[]>([]);
   const [running, setRunning] = useState(false);
   const [completionState, setCompletionState] = useState<CompletionState>(null);
@@ -54,6 +61,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   }), [items]);
   const metadataReady = hasBatchTextEdits(textEdits);
   const timeOffsetReady = Boolean(timeOffset.days || timeOffset.hours || timeOffset.minutes);
+  const gpsEdits = parseBatchGpsEdits(gpsInput);
   const currentItem = items.find((item) => item.status === "reading" || item.status === "writing" || item.status === "verifying");
   const progressPercent = items.length ? Math.round((counts.completed / items.length) * 100) : 0;
   const containsHeic = items.some((item) => imageFormatFromFile(item.source)?.format === "heic");
@@ -126,6 +134,10 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       setSelectionError(t.timeOffsetRequired);
       return;
     }
+    if (operation === "writeGps" && !gpsEdits) {
+      setSelectionError(gpsCopy.invalid);
+      return;
+    }
     stopRef.current = false;
     prepareCompletionSound();
     setCompletionState(null);
@@ -134,13 +146,14 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
     const selectedOperation = operation;
     const selectedTextEdits = { ...textEdits };
     const selectedTimeOffset = { ...timeOffset };
+    const selectedGpsEdits = gpsEdits;
     for (const item of queue) {
       if (stopRef.current) {
         update(item.id, { status: "cancelled", reason: undefined });
         continue;
       }
       update(item.id, { status: "reading", reason: undefined, output: undefined });
-      const result = await processBatchFile(item.source, selectedOperation, selectedTextEdits, selectedTimeOffset, (phase) => update(item.id, { status: phase }));
+      const result = await processBatchFile(item.source, selectedOperation, selectedTextEdits, selectedTimeOffset, selectedGpsEdits, (phase) => update(item.id, { status: phase }));
       if (result.success) update(item.id, { status: "success", output: result.file, skippedTextFields: result.skippedTextFields });
       else update(item.id, { status: "failed", reason: result.reason });
     }
@@ -175,6 +188,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const statusLabel = (status: QueueStatus) => t[status] as string;
   const assignText = (field: BatchTextField, value: string) => setTextEdits((current) => ({ ...current, [field]: value }));
   const assignTimeOffset = (field: keyof BatchTimeOffset, value: string) => setTimeOffset((current) => ({ ...current, [field]: Number.isFinite(Number(value)) ? Math.trunc(Number(value)) : 0 }));
+  const assignGps = (field: keyof BatchGpsInput, value: string) => setGpsInput((current) => ({ ...current, [field]: value }));
   const folderProps = { webkitdirectory: "", directory: "" } as unknown as Record<string, string>;
 
   return <section className="batch-shell" aria-busy={running}>
@@ -188,6 +202,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
         <button type="button" role="radio" aria-checked={operation === "removeGps"} className={operation === "removeGps" ? "active" : ""} disabled={running || configurationLocked} onClick={() => setOperation("removeGps")}>{t.gps}</button>
         <button type="button" role="radio" aria-checked={operation === "metadata"} className={operation === "metadata" ? "active" : ""} disabled={running || configurationLocked} onClick={() => setOperation("metadata")}><PencilLine size={15} />{t.metadata}</button>
         <button type="button" role="radio" aria-checked={operation === "shiftTime"} className={operation === "shiftTime" ? "active" : ""} disabled={running || configurationLocked} onClick={() => setOperation("shiftTime")}><Clock3 size={15} />{t.shiftTime}</button>
+        <button type="button" role="radio" aria-checked={operation === "writeGps"} className={operation === "writeGps" ? "active" : ""} disabled={running || configurationLocked} onClick={() => setOperation("writeGps")}><MapPin size={15} />{gpsCopy.action}</button>
       </div>
       <div className="batch-actions">
         <button type="button" className="secondary-button" disabled={running || configurationLocked} onClick={() => inputRef.current?.click()}><ImagePlus size={16} />{t.choose}</button>
@@ -211,6 +226,15 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
           <label><span>{t.days}</span><input type="number" step="1" disabled={configurationLocked} value={timeOffset.days} onChange={(event) => assignTimeOffset("days", event.target.value)} /></label>
           <label><span>{t.hours}</span><input type="number" step="1" disabled={configurationLocked} value={timeOffset.hours} onChange={(event) => assignTimeOffset("hours", event.target.value)} /></label>
           <label><span>{t.minutes}</span><input type="number" step="1" disabled={configurationLocked} value={timeOffset.minutes} onChange={(event) => assignTimeOffset("minutes", event.target.value)} /></label>
+        </div>
+      </section>}
+      {operation === "writeGps" && <section className="batch-metadata" aria-labelledby="batch-gps-title">
+        <div><h3 id="batch-gps-title">{gpsCopy.title}</h3><p>{gpsCopy.hint}</p></div>
+        <div className="batch-metadata-fields">
+          <label><span>{gpsCopy.latitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.latitude} onChange={(event) => assignGps("latitude", event.target.value)} placeholder="31.2304" /></label>
+          <label><span>{gpsCopy.longitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.longitude} onChange={(event) => assignGps("longitude", event.target.value)} placeholder="121.4737" /></label>
+          <label><span>{gpsCopy.altitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.altitude} onChange={(event) => assignGps("altitude", event.target.value)} placeholder="12.5" /></label>
+          <label><span>{gpsCopy.direction}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.direction} onChange={(event) => assignGps("direction", event.target.value)} placeholder="90" /></label>
         </div>
       </section>}
     </div>
@@ -237,7 +261,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
         {counts.success > 0 && <button type="button" className="secondary-button" disabled={running || zipBusy} onClick={() => void downloadZip()}><Download className={zipBusy ? "spin" : undefined} size={16} />{zipBusy && zipProgress ? `${t.packingZip} ${zipProgress[0]} / ${zipProgress[1]}` : t.downloadZip}</button>}
         {counts.failed > 0 && !running && <button type="button" className="secondary-button" onClick={() => void run(true)}><RefreshCw size={16} />{t.retry}</button>}
         {items.length > 0 && !running && <button type="button" className="text-button" onClick={() => { setItems([]); setConfigurationLocked(false); setCompletionState(null); }}>{t.clear}</button>}
-        {running ? <button type="button" className="secondary-button" onClick={() => { stopRef.current = true; }}>{t.stop}</button> : <button type="button" className="primary-button" disabled={!items.some((item) => item.status === "waiting" || item.status === "cancelled") || (operation === "metadata" && !metadataReady) || (operation === "shiftTime" && !timeOffsetReady)} onClick={() => void run()}><Play size={16} />{t.start}</button>}
+        {running ? <button type="button" className="secondary-button" onClick={() => { stopRef.current = true; }}>{t.stop}</button> : <button type="button" className="primary-button" disabled={!items.some((item) => item.status === "waiting" || item.status === "cancelled") || (operation === "metadata" && !metadataReady) || (operation === "shiftTime" && !timeOffsetReady) || (operation === "writeGps" && !gpsEdits)} onClick={() => void run()}><Play size={16} />{t.start}</button>}
       </div>
     </div>
   </section>;
