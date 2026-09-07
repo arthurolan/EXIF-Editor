@@ -459,6 +459,10 @@ a:focus-visible {
 .batch-metadata-fields input { width: 100%; min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: var(--paper-strong); font-size: 14px; }
 .batch-map-consent { margin-top: 14px; }
 .batch-map-picker { margin-top: 14px; }
+.batch-selection-report { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; line-height: 1.6; }
+.batch-selection-report p { margin: 8px 0; }
+.batch-selection-report summary { cursor: pointer; padding: 8px 0; }
+.batch-skipped-files { max-height: 240px; overflow: auto; overflow-wrap: anywhere; }
 .batch-gps-optional { margin-top: 14px; }
 .batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .batch-hint { margin-top: 12px; }
