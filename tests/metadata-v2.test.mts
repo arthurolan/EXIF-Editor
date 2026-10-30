@@ -94,6 +94,15 @@ test("does not treat IPTC's UTC time suffix as a date conflict", () => {
   assert.equal(semanticConflicts(fields, labels).some((conflict) => conflict.key === "dateTime"), false);
 });
 
+test("uses XMP CreateDate as the capture-time fallback, never EXIF ModifyDate", () => {
+  const fields = normalizeExifToolFields({
+    "EXIF:ModifyDate": "2026:10:30 21:41:37",
+    "XMP-xmp:CreateDate": "2006:06:14 23:14:39+08:00",
+  });
+
+  assert.equal(semanticValueFromFields(fields, "dateTime"), "2006:06:14 23:14:39+08:00");
+});
+
 test("uses the namespaced EXIF author instead of an unrelated PNG text field", () => {
   const fields = normalizeExifToolFields({
     "EXIF:Artist": "Updated author",
@@ -117,6 +126,7 @@ test("writes semantic fields to every compatible tag and splits keywords", () =>
     "EXIF:DateTimeOriginal": "2026:09:06 12:00:00",
     "XMP-exif:DateTimeOriginal": "2026:09:06 12:00:00",
     "XMP-photoshop:DateCreated": "2026:09:06 12:00:00",
+    "XMP-xmp:CreateDate": "2026:09:06 12:00:00",
     "IPTC:DateCreated": "2026:09:06",
     "IPTC:TimeCreated": "12:00:00",
   });

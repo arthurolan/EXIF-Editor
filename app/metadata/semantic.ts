@@ -52,7 +52,16 @@ export const SEMANTIC_FIELDS: SemanticFieldDefinition[] = [
   },
   {
     key: "dateTime",
-    tags: ["EXIF:DateTimeOriginal", "XMP-exif:DateTimeOriginal", "XMP-photoshop:DateCreated", "IPTC:DateCreated"],
+    // `XMP-xmp:CreateDate` is common in older Photoshop-era files where the
+    // camera EXIF block was later stripped. It is a creation-time fallback,
+    // not a filesystem or EXIF modification timestamp.
+    tags: [
+      "EXIF:DateTimeOriginal",
+      "XMP-exif:DateTimeOriginal",
+      "XMP-photoshop:DateCreated",
+      "XMP-xmp:CreateDate",
+      "IPTC:DateCreated",
+    ],
   },
   {
     key: "make",
@@ -128,6 +137,7 @@ export const semanticWriteTags = (
       "EXIF:DateTimeOriginal": value,
       "XMP-exif:DateTimeOriginal": value,
       "XMP-photoshop:DateCreated": value,
+      "XMP-xmp:CreateDate": value,
       // IPTC stores date and time in separate fields. Writing a full EXIF
       // timestamp to DateCreated leaves the original IPTC value untouched.
       "IPTC:DateCreated": date,

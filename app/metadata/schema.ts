@@ -32,6 +32,7 @@ const WRITABLE_SAFE_TAGS = new Set([
   "EXIF:ISO",
   "EXIF:FocalLength",
   "EXIF:DateTimeOriginal",
+  "XMP-xmp:CreateDate",
   "EXIF:Artist",
   "EXIF:Copyright",
   "EXIF:ImageDescription",

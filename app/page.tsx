@@ -761,7 +761,9 @@ export default function Home() {
         focalLength: numericTag(loaded, ["FocalLength"]),
         dateTime: exifDateToInput(
           semanticValueFromFields(nextMetadataFields, "dateTime") ||
-            firstTag(loaded, ["DateTimeOriginal", "DateTimeDigitized", "DateTime"]),
+            // Do not fall back to ExifReader's generic `DateTime`: for JPEGs
+            // it can be the EXIF ModifyDate, i.e. the last-save timestamp.
+            firstTag(loaded, ["DateTimeOriginal", "DateTimeDigitized"]),
         ),
         title: semanticValueFromFields(nextMetadataFields, "title"),
         artist:
