@@ -4,6 +4,8 @@ import { AlertTriangle, ArrowRight, Check, Clock3, Download, FileImage, FolderOp
 import dynamic from "next/dynamic";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { hasBatchTextEdits, parseBatchGpsEdits, processBatchFile, type BatchGpsInput, type BatchOperation, type BatchPhase, type BatchTextEdits, type BatchTextField, type BatchTimeOffset } from "./batch-processor";
+import { CoordinateField } from "./coordinate-field";
+import { parseCoordinateInput } from "./coordinate-input";
 import { imageFormatFromFile } from "./metadata/formats";
 
 const MAX_FILES = 100;
@@ -24,8 +26,8 @@ const EMPTY_TIME_OFFSET: BatchTimeOffset = { days: 0, hours: 0, minutes: 0 };
 const EMPTY_GPS_INPUT: BatchGpsInput = { latitude: "", longitude: "", altitude: "", direction: "" };
 const MapPicker = dynamic(() => import("./map-picker"), { ssr: false });
 const GPS_COPY = {
-  zh: { action: "写入 GPS", title: "要写入全部照片的位置", hint: "坐标以 WGS‑84 写入。纬度和经度必填；海拔、拍摄方向可选，留空时保持每张照片原有值。南纬和西经使用负数。", latitude: "纬度", longitude: "经度", altitude: "海拔（米，可选）", direction: "拍摄方向（0–359°，可选）", pick: "在地图上点选位置", consent: "点击后才会从 OpenFreeMap 加载地图，地图服务会获知当前视野附近区域。", invalid: "请填写有效的纬度（−90 至 90）和经度（−180 至 180）；方向须为 0–359。" },
-  en: { action: "Write GPS", title: "Location to write to every photo", hint: "Coordinates are written in WGS‑84. Latitude and longitude are required; altitude and direction are optional and keep each photo's existing value when blank. Use negative values for south and west.", latitude: "Latitude", longitude: "Longitude", altitude: "Altitude (metres, optional)", direction: "Direction (0–359°, optional)", pick: "Choose a location on the map", consent: "Clicking loads OpenFreeMap, which receives the approximate map area in view.", invalid: "Enter a valid latitude (−90 to 90) and longitude (−180 to 180); direction must be 0–359." },
+  zh: { action: "写入 GPS", title: "要写入全部照片的位置", hint: "坐标以 WGS‑84 写入。支持十进制、度分秒、度分及 N/S/E/W 或中文方向；下方显示解析结果。纬度和经度必填；海拔、拍摄方向可选，留空时保持每张照片原有值。南纬和西经使用负数。", latitude: "纬度", longitude: "经度", altitude: "海拔（米，可选）", direction: "拍摄方向（0–359°，可选）", pick: "在地图上点选位置", consent: "点击后才会从 OpenFreeMap 加载地图，地图服务会获知当前视野附近区域。", invalid: "请填写有效的纬度（−90 至 90）和经度（−180 至 180）；方向须为 0–359。" },
+  en: { action: "Write GPS", title: "Location to write to every photo", hint: "Coordinates use WGS‑84. Decimal degrees, DMS and degrees/minutes with N/S/E/W are supported; parsed values appear below. Latitude and longitude are required; altitude and direction are optional and keep each photo's existing value when blank. Use negative values for south and west.", latitude: "Latitude", longitude: "Longitude", altitude: "Altitude (metres, optional)", direction: "Direction (0–359°, optional)", pick: "Choose a location on the map", consent: "Clicking loads OpenFreeMap, which receives the approximate map area in view.", invalid: "Enter a valid latitude (−90 to 90) and longitude (−180 to 180); direction must be 0–359." },
 } as const;
 
 const copy = {
@@ -45,6 +47,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const stopRef = useRef(false);
+  const runningRef = useRef(false);
   const completionAudioRef = useRef<AudioContext | null>(null);
   const [operation, setOperation] = useState<BatchOperation>("privacy");
   const [textEdits, setTextEdits] = useState<BatchTextEdits>(EMPTY_TEXT_EDITS);
@@ -72,17 +75,19 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const gpsEdits = parseBatchGpsEdits(gpsInput);
   // Keep an empty coordinate unset so the shared picker opens at its neutral default,
   // rather than treating an empty input as the valid coordinate 0, 0.
-  const mapLatitude = gpsInput.latitude.trim() ? Number(gpsInput.latitude) : Number.NaN;
-  const mapLongitude = gpsInput.longitude.trim() ? Number(gpsInput.longitude) : Number.NaN;
+  const mapLatitude = parseCoordinateInput(gpsInput.latitude, "latitude") ?? Number.NaN;
+  const mapLongitude = parseCoordinateInput(gpsInput.longitude, "longitude") ?? Number.NaN;
   const currentItem = items.find((item) => item.status === "reading" || item.status === "writing" || item.status === "verifying");
   const progressPercent = items.length ? Math.round((counts.completed / items.length) * 100) : 0;
   const containsHeic = items.some((item) => imageFormatFromFile(item.source)?.format === "heic");
 
   const prepareCompletionSound = () => {
     if (typeof window === "undefined" || !window.AudioContext) return;
-    const context = completionAudioRef.current ?? new window.AudioContext();
-    completionAudioRef.current = context;
-    void context.resume().catch(() => undefined);
+    try {
+      const context = completionAudioRef.current ?? new window.AudioContext();
+      completionAudioRef.current = context;
+      void context.resume().catch(() => undefined);
+    } catch { /* Audio is optional and must never prevent processing. */ }
   };
 
   const playCompletionSound = () => {
@@ -140,6 +145,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   const update = (id: string, patch: Partial<QueueItem>) => setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
 
   const run = async (onlyFailed = false) => {
+    if (runningRef.current || zipBusy) return;
     const queue = items.filter((item) => onlyFailed ? item.status === "failed" : item.status === "waiting" || item.status === "cancelled");
     if (!queue.length) return;
     if (operation === "metadata" && !metadataReady) {
@@ -154,7 +160,9 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       setSelectionError(gpsCopy.invalid);
       return;
     }
+    runningRef.current = true;
     stopRef.current = false;
+    setSelectionError("");
     prepareCompletionSound();
     setCompletionState(null);
     setConfigurationLocked(true);
@@ -163,6 +171,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
     const selectedTextEdits = { ...textEdits };
     const selectedTimeOffset = { ...timeOffset };
     const selectedGpsEdits = gpsEdits;
+    try {
     for (const item of queue) {
       if (stopRef.current) {
         update(item.id, { status: "cancelled", reason: undefined });
@@ -174,8 +183,11 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       else update(item.id, { status: "failed", reason: result.reason });
     }
     setCompletionState(stopRef.current ? "stopped" : "complete");
-    playCompletionSound();
-    setRunning(false);
+    try { playCompletionSound(); } catch { /* Audio is optional. */ }
+    } finally {
+      runningRef.current = false;
+      setRunning(false);
+    }
   };
 
   const download = (file: Blob, name: string) => {
@@ -210,7 +222,7 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
   return <section className="batch-shell" aria-busy={running}>
     <div className="batch-heading">
       <div><span className="section-icon"><ShieldCheck size={18} /></span><h2>{t.title}</h2><p>{t.subtitle}</p></div>
-      <button type="button" className="text-button" onClick={onClose} disabled={running}><X size={16} />{t.back}</button>
+      <button type="button" className="text-button" onClick={onClose} disabled={running || zipBusy}><X size={16} />{t.back}</button>
     </div>
     <div className="batch-controls">
       <div className="batch-operation" role="radiogroup" aria-label={t.title}>
@@ -247,8 +259,8 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       {operation === "writeGps" && <section className="batch-metadata" aria-labelledby="batch-gps-title">
         <div><h3 id="batch-gps-title">{gpsCopy.title}</h3><p>{gpsCopy.hint}</p></div>
         <div className="batch-metadata-fields">
-          <label><span>{gpsCopy.latitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.latitude} onChange={(event) => assignGps("latitude", event.target.value)} placeholder="31.2304" /></label>
-          <label><span>{gpsCopy.longitude}</span><input inputMode="decimal" disabled={configurationLocked} value={gpsInput.longitude} onChange={(event) => assignGps("longitude", event.target.value)} placeholder="121.4737" /></label>
+          <CoordinateField axis="latitude" language={language} disabled={configurationLocked} value={gpsInput.latitude} onChange={(value) => assignGps("latitude", value)} />
+          <CoordinateField axis="longitude" language={language} disabled={configurationLocked} value={gpsInput.longitude} onChange={(value) => assignGps("longitude", value)} />
         </div>
         {!mapLoaded && !configurationLocked ? <button type="button" className="map-consent batch-map-consent" onClick={() => setMapLoaded(true)}>
           <span><Map size={20} /></span><div><strong>{gpsCopy.pick}</strong><small>{gpsCopy.consent}</small></div><ArrowRight size={18} />
@@ -292,8 +304,8 @@ export function BatchWorkspace({ language, onClose }: { language: Language; onCl
       <p>{t.noDelivery}</p>
       <div>
         {counts.success > 0 && <button type="button" className="secondary-button" disabled={running || zipBusy} onClick={() => void downloadZip()}><Download className={zipBusy ? "spin" : undefined} size={16} />{zipBusy && zipProgress ? `${t.packingZip} ${zipProgress[0]} / ${zipProgress[1]}` : t.downloadZip}</button>}
-        {counts.failed > 0 && !running && <button type="button" className="secondary-button" onClick={() => void run(true)}><RefreshCw size={16} />{t.retry}</button>}
-        {items.length > 0 && !running && <button type="button" className="text-button" onClick={() => { setItems([]); setSelectionNotice(null); setSelectionError(""); setConfigurationLocked(false); setCompletionState(null); }}>{t.clear}</button>}
+        {counts.failed > 0 && !running && <button type="button" className="secondary-button" disabled={zipBusy} onClick={() => void run(true)}><RefreshCw size={16} />{t.retry}</button>}
+        {items.length > 0 && !running && <button type="button" className="text-button" disabled={zipBusy} onClick={() => { setZipError(""); setItems([]); setSelectionNotice(null); setSelectionError(""); setConfigurationLocked(false); setCompletionState(null); }}>{t.clear}</button>}
         {running ? <button type="button" className="secondary-button" onClick={() => { stopRef.current = true; }}>{t.stop}</button> : <button type="button" className="primary-button" disabled={!items.some((item) => item.status === "waiting" || item.status === "cancelled") || (operation === "metadata" && !metadataReady) || (operation === "shiftTime" && !timeOffsetReady) || (operation === "writeGps" && !gpsEdits)} onClick={() => void run()}><Play size={16} />{t.start}</button>}
       </div>
     </div>

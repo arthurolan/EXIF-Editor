@@ -15,6 +15,7 @@ import { ADVANCED_DELETE_TAGS, normalizeExifToolFields } from "../app/metadata/s
 import {
   semanticConflicts,
   semanticValueFromFields,
+  semanticValueMatches,
   semanticWriteTags,
 } from "../app/metadata/semantic";
 import { batchDeletionTags, batchGpsEditsAreVerified, batchGpsWriteTags, batchTextEditsAreVerified, batchTextEditsForFormat, batchTextWriteTags, hasBatchTextEdits, offsetExifDateTime, parseBatchGpsEdits, unavailableBatchTextFields } from "../app/batch-processor";
@@ -32,6 +33,47 @@ const labels = {
   city: "City",
   country: "Country",
 } as const;
+
+test("keyword verification ignores separator spacing but detects missing or changed values", () => {
+  const fields = normalizeExifToolFields({ "XMP-dc:Subject": ["旅行", "风光"] });
+  assert.equal(semanticValueMatches(fields, "keywords", " 旅行,风光,, "), true);
+  assert.equal(batchTextEditsAreVerified(fields, { keywords: "旅行,风光" }), true);
+  assert.equal(semanticValueMatches(fields, "keywords", "旅行"), false);
+  assert.equal(semanticValueMatches(fields, "keywords", "旅行,人文"), false);
+  assert.equal(semanticValueMatches([], "keywords", "旅行,风光"), false);
+  assert.equal(semanticValueMatches(fields, "keywords", ""), false);
+});
+
+test("empty keywords produce explicit deletion arguments", () => {
+  assert.deepEqual(semanticWriteTags("keywords", " , , "), {
+    "XMP-dc:Subject": "", "IPTC:Keywords": "",
+  });
+});
+
+test("text verification uses the same surrounding-whitespace normalization as reading", () => {
+  const fields = normalizeExifToolFields({ "IFD0:Artist": " Olan " });
+  assert.equal(semanticValueMatches(fields, "artist", " Olan "), true);
+  assert.equal(semanticValueMatches(fields, "artist", "Someone else"), false);
+});
+
+test("semantic verification detects a stale secondary metadata copy", () => {
+  const fields = normalizeExifToolFields({ "IFD0:Artist": "Olan", "XMP-dc:Creator": "Old name" });
+  assert.equal(semanticValueMatches(fields, "artist", "Olan"), false);
+});
+
+test("time offsets do not inherit the computer's daylight-saving transitions", () => {
+  const oldZone = process.env.TZ;
+  process.env.TZ = "America/New_York";
+  try {
+    assert.equal(offsetExifDateTime("2026:03:08 01:30:00", { days: 0, hours: 1, minutes: 0 }), "2026:03:08 02:30:00");
+    assert.equal(offsetExifDateTime("2026:11:01 01:30:00", { days: 0, hours: 1, minutes: 0 }), "2026:11:01 02:30:00");
+    assert.equal(offsetExifDateTime("2026:02:30 12:00:00", { days: 1, hours: 0, minutes: 0 }), null);
+    assert.equal(offsetExifDateTime("9999:12:31 23:00:00", { days: 1, hours: 0, minutes: 0 }), null);
+  } finally {
+    if (oldZone === undefined) delete process.env.TZ;
+    else process.env.TZ = oldZone;
+  }
+});
 
 test("normalizes ExifTool groups and preserves list values", () => {
   const fields = normalizeExifToolFields({
@@ -313,7 +355,7 @@ test("writes and verifies batch GPS coordinates with optional altitude and direc
   assert.deepEqual(gps, { latitude: -33.8688, longitude: 151.2093, altitude: -3.5, direction: 90 });
   assert.deepEqual(batchGpsWriteTags(gps!), {
     GPSLatitude: 33.8688, GPSLatitudeRef: "S", GPSLongitude: 151.2093, GPSLongitudeRef: "E",
-    GPSAltitude: 3.5, GPSAltitudeRef: 1, GPSImgDirection: 90, GPSImgDirectionRef: "T",
+    GPSAltitude: 3.5, "GPSAltitudeRef#": 1, GPSImgDirection: 90, GPSImgDirectionRef: "T",
   });
   const verified = normalizeExifToolFields({
     "GPS:GPSLatitude": "33.8688", "GPS:GPSLatitudeRef": "S", "GPS:GPSLongitude": "151.2093", "GPS:GPSLongitudeRef": "E",

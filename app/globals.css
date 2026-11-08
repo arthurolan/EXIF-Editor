@@ -1991,3 +1991,7 @@ footer p {
     transition-duration: 0.01ms !important;
   }
 }
+/* Keep coordinate parsing feedback attached to its field at all widths. */
+.coordinate-feedback { display: block; color: var(--ink-green); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.coordinate-feedback.invalid { color: var(--danger); }
+.coordinate-field input[aria-invalid="true"] { border-color: var(--danger); }

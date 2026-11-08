@@ -27,6 +27,9 @@ import {
 import dynamic from "next/dynamic";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { outputNameFor } from "./export-delivery.mjs";
+import { CoordinateField } from "./coordinate-field";
+import { coordinatePreview, parseCoordinateInput } from "./coordinate-input";
+import { batchGpsEditsAreVerified, batchGpsWriteTags, parseBatchGpsEdits } from "./batch-processor";
 import { BatchWorkspace } from "./batch-workspace";
 import {
   imageDataDigest,
@@ -44,6 +47,7 @@ import {
   normalizeExifToolFields,
 } from "./metadata/schema";
 import {
+  expandCleanupTargets,
   gpsDeletionTags,
   isGpsLocationMetadataField,
   privacySerialDeletionTagsForPreset,
@@ -54,8 +58,12 @@ import {
   SemanticFieldKey,
   semanticConflicts,
   semanticValueFromFields,
+  semanticValueMatches,
   semanticWriteTags,
 } from "./metadata/semantic";
+
+import { numericFieldMatches, storedNumericValue } from "./metadata/numeric";
+import { writeMetadataInStages } from "./metadata/write-stages";
 
 const MapPicker = dynamic(() => import("./map-picker"), {
   ssr: false,
@@ -115,7 +123,7 @@ const COPY = {
     noGps: "照片中没有 GPS 信息",
     latitude: "纬度",
     longitude: "经度",
-    coordinateHint: "南纬和西经请输入负数；例如悉尼约为 −33.8688, 151.2093",
+    coordinateHint: "支持十进制、度分秒、度分及中文方向。南纬／西经可用负数或 S／W；例如 31°13′49.5″ N。请核对下方的十进制解析结果。",
     pickOnMap: "在地图上点选位置",
     mapConsent: "点击后才会从 OpenFreeMap 加载地图，地图服务会获知当前视野附近区域",
     altitude: "海拔",
@@ -216,9 +224,9 @@ const COPY = {
     heicRetentionWarning: "此 HEIC 含 HDR、景深或人像效果等辅助图像数据。相关 XMP 与 ICC 配置是图像项目的一部分，会保留以保护视觉效果；标准 XMP、GPS 和隐私字段仍可清理。",
     heicFullWipeUnsupported: "此 HEIC 的辅助图像 XMP 与 ICC 配置无法在不损害 HDR、景深或颜色的情况下安全删除，因此不支持彻底清空或删除 ICC 色彩配置。",
     verificationNoteStructural: "字段已复核 · 图像容器结构复核通过",
-    fileTooLarge: "图片超过 100 MB。请先选择体积更小的文件。",
+    fileTooLarge: "图片超过 500 MB。请先选择体积更小的文件。",
     parseFailed: "没有成功解析这张图片。文件可能已损坏，或包含暂不支持的元数据结构。",
-    invalidCoordinates: "请输入有效的 WGS-84 经纬度：纬度范围 −90～90，经度范围 −180～180。",
+    invalidCoordinates: "请检查位置输入：支持十进制、度分秒和度分；纬度须为 −90～90，经度为 −180～180，海拔须为数字，方向须在 0（含）至 360（不含）之间。",
     nothingToWrite: "还没有需要写入的修改。",
     writingMetadata: "正在本地写入元数据…",
     preparingWriter: "正在准备本地写入工具…",
@@ -226,6 +234,9 @@ const COPY = {
     writerResourceFailed: "本地写入组件载入失败。请刷新页面后重试；若仍失败，请确认网站资源已完整更新。",
     writeFailed: "ExifTool 写入失败",
     verifyingFile: "正在重新读取并核验导出文件…",
+    cleaningMetadata: "正在清理旧元数据…",
+    metadataReadFailed: "无法重新读取处理后的元数据，已阻止下载。",
+    cleanupThenWrite: "先清理所选的旧元数据，再写入本次修改的字段。新填写的字段会保留，并可能重新建立 EXIF、XMP 或 IPTC 数据组；未修改的旧字段不会自动补回。删除 Photoshop 组也会删除其中的 IPTC 信息。明确选择“删除位置”时仍会删除 GPS。",
     gpsVerificationFailed: "写入后的 GPS 复核未通过，已阻止下载。",
     fieldVerificationFailed: "写入后的字段复核未通过，已阻止下载。",
     cleanupVerificationFailed: "写入后的隐私清理复核未通过，已阻止下载。",
@@ -284,7 +295,7 @@ const COPY = {
     noGps: "This photo has no GPS data",
     latitude: "Latitude",
     longitude: "Longitude",
-    coordinateHint: "Use negative values for south and west; Sydney is about −33.8688, 151.2093.",
+    coordinateHint: "Use decimal degrees, DMS or degrees/minutes, e.g. 31°13′49.5″ N. South/west accept a minus sign or S/W. Check the parsed decimal values below each field.",
     pickOnMap: "Choose a location on the map",
     mapConsent: "OpenFreeMap loads only after this click, revealing the approximate map area to the map service.",
     altitude: "Altitude",
@@ -385,9 +396,9 @@ const COPY = {
     heicRetentionWarning: "This HEIC contains auxiliary HDR, depth, or portrait-effect image data. Its related XMP and ICC profiles are retained to protect visual rendering; standard XMP, GPS, and privacy fields can still be cleaned.",
     heicFullWipeUnsupported: "This HEIC's auxiliary-image XMP and ICC profiles cannot be safely removed without affecting HDR, depth, or color, so full wipe and ICC-profile removal are unavailable.",
     verificationNoteStructural: "Fields verified · Image container structure verified",
-    fileTooLarge: "This image is larger than 100 MB. Please choose a smaller file.",
+    fileTooLarge: "This image is larger than 500 MB. Please choose a smaller file.",
     parseFailed: "This image could not be parsed. It may be damaged or contain an unsupported metadata structure.",
-    invalidCoordinates: "Enter valid WGS-84 coordinates: latitude −90 to 90 and longitude −180 to 180.",
+    invalidCoordinates: "Check the location: use decimal degrees, DMS or degrees/minutes; latitude −90 to 90, longitude −180 to 180, numeric altitude and direction from 0 (inclusive) to 360 (exclusive).",
     nothingToWrite: "There are no changes to write yet.",
     writingMetadata: "Writing metadata locally…",
     preparingWriter: "Preparing the local metadata writer…",
@@ -395,6 +406,9 @@ const COPY = {
     writerResourceFailed: "The local writer could not load. Refresh the page and try again; if it persists, the site assets may not have updated completely.",
     writeFailed: "ExifTool could not write the metadata",
     verifyingFile: "Reading and verifying the exported file…",
+    cleaningMetadata: "Cleaning existing metadata…",
+    metadataReadFailed: "Could not re-read the processed metadata. The download was blocked.",
+    cleanupThenWrite: "Selected old metadata is cleaned first, then your explicit edits are written. New values are kept and may recreate EXIF, XMP or IPTC groups; unchanged old fields are not restored. Removing Photoshop also removes its contained IPTC. Choosing Remove location still removes GPS.",
     gpsVerificationFailed: "GPS verification failed after writing. The download was blocked.",
     fieldVerificationFailed: "Field verification failed after writing. The download was blocked.",
     cleanupVerificationFailed: "Privacy cleanup verification failed after writing. The download was blocked.",
@@ -491,6 +505,12 @@ const firstTag = (tags: ExifTags, names: string[]): string => {
 };
 
 const numericTag = (tags: ExifTags, names: string[], allowFraction = false): string => {
+  for (const name of names) {
+    // ApertureValue is an APEX value, so its display conversion remains the fallback.
+    if (name === "ApertureValue") continue;
+    const stored = storedNumericValue(tags[name]?.value, allowFraction);
+    if (stored !== null) return stored;
+  }
   const value = firstTag(tags, names);
   const pattern = allowFraction ? /\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|-?\d+(?:\.\d+)?/ : /-?\d+(?:\.\d+)?/;
   return value.match(pattern)?.[0]?.replaceAll(" ", "") ?? "";
@@ -506,33 +526,26 @@ const positiveExposure = (value: string): boolean => {
   return positiveNumber(value);
 };
 
-const exposureValue = (value: string): number => {
-  const fraction = value.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
-  return fraction ? Number(fraction[1]) / Number(fraction[2]) : Number(value);
-};
-
-const sameNumericValue = (actual: string, expected: string, exposure = false): boolean => {
-  if (!actual || !expected) return actual === expected;
-  const actualNumber = exposure ? exposureValue(actual) : Number(actual);
-  const expectedNumber = exposure ? exposureValue(expected) : Number(expected);
-  return (
-    Number.isFinite(actualNumber) &&
-    Number.isFinite(expectedNumber) &&
-    Math.abs(actualNumber - expectedNumber) <= Math.max(1e-9, Math.abs(expectedNumber) * 1e-6)
-  );
-};
-
 const parseCoordinate = (value: string): string => {
   const match = value.replace(/[°'"]/g, " ").match(/-?\d+(?:\.\d+)?/);
   return match ? match[0] : "";
 };
 
 const gpsCoordinate = (tags: ExifTags, axis: "Latitude" | "Longitude"): string => {
-  const coordinate = Number(parseCoordinate(firstTag(tags, [`GPS${axis}`])));
+  const raw = parseCoordinate(firstTag(tags, [`GPS${axis}`]));
+  if (!raw) return "";
+  const coordinate = Number(raw);
   if (!Number.isFinite(coordinate)) return "";
   const reference = firstTag(tags, [`GPS${axis}Ref`]);
   const isNegative = axis === "Latitude" ? /south|^s$/i.test(reference) : /west|^w$/i.test(reference);
   return String(isNegative ? -Math.abs(coordinate) : Math.abs(coordinate));
+};
+
+const signedAltitude = (tags: ExifTags): string => {
+  const value = storedNumericValue(tags.GPSAltitude?.value) ?? parseCoordinate(firstTag(tags, ["GPSAltitude"]));
+  if (!value) return "";
+  const reference = firstTag(tags, ["GPSAltitudeRef"]);
+  return String(/below|^1$|^3$/i.test(reference) ? -Math.abs(Number(value)) : Number(value));
 };
 
 const exifDateToInput = (value: string): string => {
@@ -618,6 +631,7 @@ const getImageDimensions = (url: string): Promise<{ width: number; height: numbe
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepthRef = useRef(0);
+  const operationBusyRef = useRef(false);
   const [language, setLanguage] = useState<Language>("zh");
   const [file, setFile] = useState<File | null>(null);
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -690,32 +704,20 @@ export default function Home() {
   };
 
   const readFile = async (selected: File) => {
+    if (operationBusyRef.current) return;
+    operationBusyRef.current = true;
+    setBusy(true);
     setError("");
-    setStatus("");
+    setStatus(t.reading);
     setVerified(false);
     setPixelVerified(false);
     setReviewOpen(false);
-    setMetadataFields([]);
-    setResolvedConflicts({});
-    setPreviewAvailable(false);
-
-    const format = imageFormatFromFile(selected);
-    if (!format) {
-      setError(t.jpegOnly);
-      return;
-    }
-    if (selected.size > MAX_FILE_SIZE) {
-      setError(t.fileTooLarge);
-      return;
-    }
-    const formatSafety = formatSafetyFromBuffer(await selected.arrayBuffer(), format.format);
-    if (!formatSafety.writable) {
-      setError(formatSafety.reason);
-      return;
-    }
-
-    setBusy(true);
     try {
+      const format = imageFormatFromFile(selected);
+      if (!format) throw new Error(t.jpegOnly);
+      if (selected.size > MAX_FILE_SIZE) throw new Error(t.fileTooLarge);
+      const formatSafety = formatSafetyFromBuffer(await selected.arrayBuffer(), format.format);
+      if (!formatSafety.writable) throw new Error(formatSafety.reason);
       const [{ default: ExifReader }, { readMetadataInWorker }] = await Promise.all([
         import("exifreader"),
         import("./exif-write-client"),
@@ -728,6 +730,7 @@ export default function Home() {
       const exifToolResult = await readMetadataInWorker(selected, (phase) => {
         setStatus(phase === "loading" ? t.preparingWriter : t.reading);
       });
+      if (!exifToolResult.success) throw new Error(`${t.parseFailed} ${exifToolResult.error}`);
       const nextUrl = URL.createObjectURL(selected);
       const dimensions = await getImageDimensions(nextUrl).catch(() => null);
       const nextMetadataFields = exifToolResult.success
@@ -777,7 +780,7 @@ export default function Home() {
           firstTag(loaded, ["ImageDescription", "Description", "Caption-Abstract"]),
         latitude,
         longitude,
-        altitude: parseCoordinate(firstTag(loaded, ["GPSAltitude"])),
+        altitude: signedAltitude(loaded),
         direction: parseCoordinate(firstTag(loaded, ["GPSImgDirection"])),
       };
       setOriginal(nextData);
@@ -794,8 +797,10 @@ export default function Home() {
       setStatus("");
     } catch (cause) {
       console.error(cause);
-      setError(t.parseFailed);
+      setError(cause instanceof Error ? cause.message : t.parseFailed);
+      setStatus("");
     } finally {
+      operationBusyRef.current = false;
       setBusy(false);
     }
   };
@@ -844,11 +849,10 @@ export default function Home() {
     setStatus("");
   };
 
-  const hasValidCoordinates =
-    Number.isFinite(Number(form.latitude)) &&
-    Number.isFinite(Number(form.longitude)) &&
-    Math.abs(Number(form.latitude)) <= 90 &&
-    Math.abs(Number(form.longitude)) <= 180;
+  const hasGpsEdits = gpsMode === "edit" &&
+    (["latitude", "longitude", "altitude", "direction"] as const).some((key) => form[key] !== original[key]);
+
+  const parsedGps = parseBatchGpsEdits({ latitude: form.latitude, longitude: form.longitude, altitude: form.altitude, direction: form.direction });
 
   const hasValidCameraSettings =
     positiveNumber(form.aperture) &&
@@ -925,7 +929,7 @@ export default function Home() {
         original.latitude && original.longitude
           ? `${original.latitude}, ${original.longitude}`
           : "",
-        form.latitude && form.longitude ? `${form.latitude}, ${form.longitude}` : "",
+        form.latitude && form.longitude ? `${coordinatePreview(parseCoordinateInput(form.latitude, "latitude") ?? NaN)}, ${coordinatePreview(parseCoordinateInput(form.longitude, "longitude") ?? NaN)}` : "",
       );
       push(t.altitude, original.altitude, form.altitude);
       push(t.direction, original.direction, form.direction);
@@ -983,7 +987,7 @@ export default function Home() {
       setError(t.invalidCameraSettings);
       return;
     }
-    if (gpsMode === "edit" && !hasValidCoordinates) {
+    if (hasGpsEdits && !parsedGps) {
       setError(t.invalidCoordinates);
       return;
     }
@@ -1002,12 +1006,13 @@ export default function Home() {
   };
 
   const exportFile = async () => {
-    if (!file) return;
+    if (!file || operationBusyRef.current) return;
     const format = imageFormatFromFile(file);
     if (!format) {
       setError(t.exportFailed);
       return;
     }
+    operationBusyRef.current = true;
     setBusy(true);
     setError("");
     setStatus(t.writingMetadata);
@@ -1067,203 +1072,142 @@ export default function Home() {
       }
 
       const cleanupDeletionTargets = [...CLEANUP_PRESETS[cleanupPreset].tags];
-      const requestedDeletionTargets = [
+      const requestedDeletionTargets = expandCleanupTargets([
         ...cleanupDeletionTargets,
         ...groupDeletes,
-      ];
+      ], format.format);
       const removesTiffExif =
         format.format === "tiff" &&
         requestedDeletionTargets.some((tag) => tag === "All" || tag === "EXIF:All");
-      const shouldDeleteGps =
-        gpsMode === "remove" || requestedDeletionTargets.includes("GPS:All");
+      const cleanupWriteTags: typeof writeTags = {};
+      const deletesOldGps = gpsMode === "remove" || requestedDeletionTargets.some(
+        (tag) => ["GPS:All", "EXIF:All", "All"].includes(tag),
+      );
+      const shouldDeleteGps = deletesOldGps && !hasGpsEdits;
 
-      if (shouldDeleteGps) {
+      if (deletesOldGps) {
         // WebP and PNG often carry GPS in XMP or EXIF aliases instead of the
         // GPS IFD. Remove each source field actually found, in addition to the
         // standard GPS group, without touching ExifTool's derived Composite tags.
-        for (const tag of gpsDeletionTags(metadataFields)) writeTags[tag] = "";
-      } else if (gpsMode === "edit") {
-        const latitude = Number(form.latitude);
-        const longitude = Number(form.longitude);
-        writeTags.GPSLatitude = Math.abs(latitude);
-        writeTags.GPSLatitudeRef = latitude < 0 ? "S" : "N";
-        writeTags.GPSLongitude = Math.abs(longitude);
-        writeTags.GPSLongitudeRef = longitude < 0 ? "W" : "E";
-        if (form.altitude !== original.altitude) {
-          writeTags.GPSAltitude = form.altitude ? Number(form.altitude) : "";
+        for (const tag of gpsDeletionTags(metadataFields)) cleanupWriteTags[tag] = "";
+      }
+      if (hasGpsEdits) {
+        if (!parsedGps) throw new Error(t.invalidCoordinates);
+        Object.assign(writeTags, batchGpsWriteTags({
+          latitude: parsedGps.latitude, longitude: parsedGps.longitude,
+          ...(form.altitude !== original.altitude && parsedGps.altitude !== undefined ? { altitude: parsedGps.altitude } : {}),
+          ...(form.direction !== original.direction && parsedGps.direction !== undefined ? { direction: parsedGps.direction } : {}),
+        }));
+        if (form.altitude !== original.altitude && !form.altitude.trim()) {
+          writeTags.GPSAltitude = ""; writeTags.GPSAltitudeRef = "";
         }
-        if (form.direction !== original.direction) {
-          writeTags.GPSImgDirection = form.direction ? Number(form.direction) : "";
-          if (form.direction) writeTags.GPSImgDirectionRef = "T";
+        if (form.direction !== original.direction && !form.direction.trim()) {
+          writeTags.GPSImgDirection = ""; writeTags.GPSImgDirectionRef = "";
         }
       }
-      for (const tag of cleanupDeletionTargets) {
-        writeTags[tag] = "";
+      for (const tag of requestedDeletionTargets) {
+        cleanupWriteTags[tag] = "";
       }
       const privacySerialDeletionTargets = privacySerialDeletionTagsForPreset(
         metadataFields,
         cleanupPreset,
       );
-      for (const tag of privacySerialDeletionTargets) writeTags[tag] = "";
-      for (const tag of groupDeletes) {
-        writeTags[tag] = "";
-      }
+      for (const tag of expandCleanupTargets(privacySerialDeletionTargets, format.format)) cleanupWriteTags[tag] = "";
       if (removesTiffExif) {
         // ExifTool retains writable IFD0 fields when asked to delete EXIF:All
         // from a TIFF. Clear the actual non-structural IFD entries explicitly;
         // the required image-layout entries stay intact for a valid output.
         for (const field of metadataFields) {
           if (field.group === "EXIF" && !isRequiredTiffImageField(field.key)) {
-            writeTags[field.key] = "";
+            cleanupWriteTags[field.key] = "";
           }
         }
       }
 
-      // Browser text is UTF-8. Explicitly mark IPTC text the same way so old
-      // JPEGs without CodedCharacterSet don't fall back to the unavailable
-      // Latin codec in the WASM build.
-      const hasIptcTextWrite = Object.keys(writeTags).some(
-        (tag) => tag.startsWith("IPTC:") && writeTags[tag] !== "",
-      );
-      if (hasIptcTextWrite) {
-        writeTags["IPTC:CodedCharacterSet"] = "UTF8";
-      }
-
-      const [{ readMetadataInWorker, writeMetadataInWorker }, { default: ExifReader }] = await Promise.all([
-        import("./exif-write-client"),
-        import("exifreader"),
-      ]);
-      // Some iPhone JPEGs contain an empty XMP dc:subject rdf:Bag. ExifTool
-      // reports that as a [minor] warning while still producing a valid output,
-      // but the WASM wrapper treats any stderr output as a failed operation.
-      // Suppress only ExifTool's minor warnings; real warnings and errors still
-      // flow through the wrapper and block export.
-      const writeInput = await fileForMetadataWrite(file, format.format);
-      const removesIccProfile = requestedDeletionTargets.some(
-        (tag) => tag === "All" || tag === "ICC_Profile:All",
-      );
-      const result = await writeMetadataInWorker(
-        writeInput,
-        writeTags,
-        // Midjourney and other PNG exporters sometimes put UTF-8 text into a
-        // legacy tEXt chunk. The WASM build cannot load its Latin codec; force
-        // UTF-8 as ExifTool's external charset for every write.
-        [
-          ...(hasIptcTextWrite
-            ? ["-charset", "UTF8", "-charset", "IPTC=UTF8"]
-            : ["-charset", "UTF8"]),
-          // ExifTool emits "ICC_Profile deleted" on stderr even when it
-          // successfully creates a valid metadata-only output. The WASM
-          // wrapper treats any stderr as a failure, so silence this expected
-          // notice only when the user explicitly requested ICC removal. The
-          // output is still re-read and its image data is verified below.
-          ...(removesIccProfile ? ["-q", "-q"] : []),
-        ],
-        (phase) => {
-        setStatus(phase === "loading" ? t.preparingWriter : t.writingMetadata);
-        },
-      );
-      if (!result.success) {
-        const resourceFailed = result.error.startsWith("EXIF_WASM_");
-        throw new Error(
-          result.error === "EXIF_WRITE_TIMEOUT"
-            ? t.writeTimedOut
-            : resourceFailed
-              ? t.writerResourceFailed
-              : result.error || t.writeFailed,
-        );
-      }
-
-      const outputBuffer = result.data;
+      const { readMetadataInWorker, writeMetadataInWorker } = await import("./exif-write-client");
+      const readVerifiedFields = async (processed: File) => {
+        setStatus(t.verifyingFile);
+        const result = await readMetadataInWorker(processed, undefined, { numeric: true });
+        if (!result.success) throw new Error(`${t.metadataReadFailed} ${result.error}`);
+        return normalizeExifToolFields(result.data);
+      };
       const outputName = outputNameFor(file.name, format.extension);
-      const outputFile = new File([outputBuffer], outputName, {
-        type: format.mimeType,
+      const outputFile = await writeMetadataInStages({
+        file: await fileForMetadataWrite(file, format.format),
+        edits: writeTags,
+        deletions: cleanupWriteTags,
+        write: async (input, tags, stage) => {
+          const hasIptcTextWrite = Object.entries(tags).some(
+            ([tag, value]) => tag.startsWith("IPTC:") && value !== "",
+          );
+          const removesIccProfile = stage === "cleanup" && requestedDeletionTargets.some(
+            (tag) => tag === "All" || tag === "ICC_Profile:All",
+          );
+          const result = await writeMetadataInWorker(input,
+            hasIptcTextWrite ? { ...tags, "IPTC:CodedCharacterSet": "UTF8" } : tags,
+            ["-charset", "UTF8", ...(hasIptcTextWrite ? ["-charset", "IPTC=UTF8"] : []),
+              // Silence the expected ICC-removal notice only for the cleanup pass.
+              ...(removesIccProfile ? ["-q", "-q"] : [])],
+            (phase) => setStatus(phase === "loading" ? t.preparingWriter : stage === "cleanup" ? t.cleaningMetadata : t.writingMetadata),
+          );
+          if (!result.success) {
+            throw new Error(result.error === "EXIF_WRITE_TIMEOUT" ? t.writeTimedOut
+              : result.error.startsWith("EXIF_WASM_") ? t.writerResourceFailed
+              : `${stage === "cleanup" ? t.cleaningMetadata : t.writeFailed} ${result.error}`);
+          }
+          return new File([result.data], outputName, { type: format.mimeType });
+        },
+        verifyCleanup: async (cleaned) => {
+          const fields = await readVerifiedFields(cleaned);
+          const deletionFields = format.format === "tiff"
+            ? fields.filter((field) => !isRequiredTiffImageField(field.key))
+            : format.format === "heic"
+              ? fields.filter((field) => !isRequiredHeicVisualMetadata(field.key))
+              : fields;
+          const remaining = remainingDeletionTargets(deletionFields, [
+            ...requestedDeletionTargets,
+            ...privacySerialDeletionTargets,
+            ...(deletesOldGps ? ["GPS:All"] : []),
+          ]);
+          const serials = cleanupPreset === "privacy" ? remainingPrivacySerialFields(deletionFields) : [];
+          if (remaining.length || serials.length) {
+            throw new Error(`${t.cleanupVerificationFailed} ${[...remaining, ...serials.map((field) => field.key)].join(", ")}`);
+          }
+        },
       });
+      const outputBuffer = await outputFile.arrayBuffer();
 
       setStatus(t.verifyingFile);
-      const verifiedTags = (await ExifReader.load(outputFile, {
-        includeUnknown: true,
-      })) as ExifTags;
-      const verifiedMetadataResult = await readMetadataInWorker(outputFile);
-      const verifiedMetadataFields = verifiedMetadataResult.success
-        ? normalizeExifToolFields(verifiedMetadataResult.data)
-        : [];
+      const verifiedMetadataFields = await readVerifiedFields(outputFile);
 
-      const verifiedLat = gpsCoordinate(verifiedTags, "Latitude");
-      const verifiedLng = gpsCoordinate(verifiedTags, "Longitude");
-      const gpsOk =
-        shouldDeleteGps
-          ? !verifiedMetadataFields.some(isGpsLocationMetadataField)
-          : gpsMode === "edit"
-            ? Math.abs(Number(verifiedLat) - Number(form.latitude)) < 0.000001 &&
-              Math.abs(Number(verifiedLng) - Number(form.longitude)) < 0.000001
-            : true;
-      const semanticFieldsOk =
-        (!shouldWriteSemanticField("make") ||
-          semanticValueFromFields(verifiedMetadataFields, "make") === form.make) &&
-        (!shouldWriteSemanticField("model") ||
-          semanticValueFromFields(verifiedMetadataFields, "model") === form.model) &&
-        (!shouldWriteSemanticField("lensModel") ||
-          semanticValueFromFields(verifiedMetadataFields, "lensModel") === form.lensModel) &&
-        (!shouldWriteSemanticField("dateTime") ||
-          exifDateToInput(semanticValueFromFields(verifiedMetadataFields, "dateTime")) ===
-            form.dateTime) &&
-        (!shouldWriteSemanticField("title") ||
-          semanticValueFromFields(verifiedMetadataFields, "title") === form.title) &&
-        (!shouldWriteSemanticField("artist") ||
-          semanticValueFromFields(verifiedMetadataFields, "artist") === form.artist) &&
-        (!shouldWriteSemanticField("copyright") ||
-          semanticValueFromFields(verifiedMetadataFields, "copyright") === form.copyright) &&
-        (!shouldWriteSemanticField("keywords") ||
-          semanticValueFromFields(verifiedMetadataFields, "keywords") === form.keywords) &&
-        (!shouldWriteSemanticField("city") ||
-          semanticValueFromFields(verifiedMetadataFields, "city") === form.city) &&
-        (!shouldWriteSemanticField("country") ||
-          semanticValueFromFields(verifiedMetadataFields, "country") === form.country) &&
-        (!shouldWriteSemanticField("description") ||
-          semanticValueFromFields(verifiedMetadataFields, "description") === form.description);
-      const deletionVerificationFields =
-        format.format === "tiff"
-          ? verifiedMetadataFields.filter((field) => !isRequiredTiffImageField(field.key))
-          : format.format === "heic"
-            ? verifiedMetadataFields.filter((field) => !isRequiredHeicVisualMetadata(field.key))
-          : verifiedMetadataFields;
-      const remainingDeletionTags = remainingDeletionTargets(
-        deletionVerificationFields,
-        [
-          ...CLEANUP_PRESETS[cleanupPreset].tags,
-          ...privacySerialDeletionTargets,
-          ...groupDeletes,
-        ],
-      );
-      const remainingPrivacySerials =
-        cleanupPreset === "privacy"
-          ? remainingPrivacySerialFields(deletionVerificationFields)
-          : [];
-      const editableFieldsOk =
-        semanticFieldsOk &&
-        // Semantic fields above are verified from ExifTool's namespaced tags.
-        // Do not re-check them with ExifReader's unqualified names: PNG tEXt
-        // chunks may use names such as "Artist" or "Model" too, and can retain
-        // an old value even though the actual EXIF/XMP/IPTC write succeeded.
-        (form.aperture === original.aperture ||
-          sameNumericValue(
-            numericTag(verifiedTags, ["FNumber", "ApertureValue"]),
-            form.aperture,
-          )) &&
-        (form.shutterSpeed === original.shutterSpeed ||
-          sameNumericValue(
-            numericTag(verifiedTags, ["ExposureTime"], true),
-            form.shutterSpeed,
-            true,
-          )) &&
-        (form.iso === original.iso ||
-          sameNumericValue(
-            numericTag(verifiedTags, ["ISOSpeedRatings", "PhotographicSensitivity"]),
-            form.iso,
-          )) &&
-        (form.focalLength === original.focalLength ||
-          sameNumericValue(numericTag(verifiedTags, ["FocalLength"]), form.focalLength));
+      const gpsOk = shouldDeleteGps
+        ? !verifiedMetadataFields.some(isGpsLocationMetadataField)
+        : !hasGpsEdits || (parsedGps !== null && batchGpsEditsAreVerified(verifiedMetadataFields, {
+          latitude: parsedGps.latitude, longitude: parsedGps.longitude,
+          ...(form.altitude !== original.altitude && parsedGps.altitude !== undefined ? { altitude: parsedGps.altitude } : {}),
+          ...(form.direction !== original.direction && parsedGps.direction !== undefined ? { direction: parsedGps.direction } : {}),
+        }) &&
+          (form.altitude === original.altitude || form.altitude.trim() || !verifiedMetadataFields.some((field) => field.tag === "GPSAltitude")) &&
+          (form.direction === original.direction || form.direction.trim() || !verifiedMetadataFields.some((field) => field.tag === "GPSImgDirection")));
+      const failedFields: string[] = [];
+      for (const key of Object.keys(semanticLabels) as SemanticFieldKey[]) {
+        if (!shouldWriteSemanticField(key)) continue;
+        const matches = semanticValueMatches(verifiedMetadataFields, key, key === "dateTime" ? inputDateToExif(form.dateTime) : form[key]);
+        if (!matches) failedFields.push(semanticLabels[key]);
+      }
+      const numericChecks = [
+        ["aperture", t.aperture, "FNumber"],
+        ["shutterSpeed", t.shutter, "ExposureTime"],
+        ["iso", "ISO", "ISO"],
+        ["focalLength", t.focalLength, "FocalLength"],
+      ] as const;
+      for (const [key, label, tag] of numericChecks) {
+        if (form[key] !== original[key] &&
+          !numericFieldMatches(verifiedMetadataFields, tag, form[key])) {
+          failedFields.push(label);
+        }
+      }
+      const editableFieldsOk = failedFields.length === 0;
 
       // HEIC metadata item payloads are stored inside the ISO-BMFF mdat box.
       // Hashing the entire box therefore reports every legitimate metadata edit
@@ -1275,17 +1219,10 @@ export default function Home() {
           : (await imageDataDigest(file, format.format)) ===
             (await imageDataDigest(outputFile, format.format));
 
-      setVerified(gpsOk && editableFieldsOk);
+      setVerified(Boolean(gpsOk) && editableFieldsOk);
       setPixelVerified(samePixels);
       if (!gpsOk) throw new Error(t.gpsVerificationFailed);
-      if (!editableFieldsOk) throw new Error(t.fieldVerificationFailed);
-      if (remainingDeletionTags.length || remainingPrivacySerials.length) {
-        console.error(
-          "Metadata cleanup verification failed",
-          JSON.stringify([...remainingDeletionTags, ...remainingPrivacySerials.map((field) => field.key)]),
-        );
-        throw new Error(t.cleanupVerificationFailed);
-      }
+      if (!editableFieldsOk) throw new Error(`${t.fieldVerificationFailed} ${failedFields.join("、")}`);
       if (!samePixels) throw new Error(t.pixelsChanged);
 
       const href = URL.createObjectURL(outputFile);
@@ -1308,6 +1245,7 @@ export default function Home() {
         setPreviewUrl(URL.createObjectURL(file));
         setPreviewAvailable(true);
       }
+      operationBusyRef.current = false;
       setBusy(false);
     }
   };
@@ -1548,24 +1486,8 @@ export default function Home() {
                   ) : (
                     <>
                       <div className="coordinate-grid">
-                        <label>
-                          <span>{t.latitude} <small>Latitude</small></span>
-                          <input
-                            inputMode="decimal"
-                            value={form.latitude}
-                            onChange={(event) => assign("latitude", event.target.value)}
-                            placeholder="31.230416"
-                          />
-                        </label>
-                        <label>
-                          <span>{t.longitude} <small>Longitude</small></span>
-                          <input
-                            inputMode="decimal"
-                            value={form.longitude}
-                            onChange={(event) => assign("longitude", event.target.value)}
-                            placeholder="121.473701"
-                          />
-                        </label>
+                        <CoordinateField axis="latitude" language={language} value={form.latitude} onChange={(value) => assign("latitude", value)} />
+                        <CoordinateField axis="longitude" language={language} value={form.longitude} onChange={(value) => assign("longitude", value)} />
                       </div>
                       <div className="coordinate-hint">
                         <CircleHelp size={14} />
@@ -1584,8 +1506,8 @@ export default function Home() {
                       ) : mapLoaded && !busy ? (
                         <MapPicker
                           language={language}
-                          latitude={Number(form.latitude)}
-                          longitude={Number(form.longitude)}
+                          latitude={parseCoordinateInput(form.latitude, "latitude") ?? NaN}
+                          longitude={parseCoordinateInput(form.longitude, "longitude") ?? NaN}
                           onChange={(latitude, longitude) => {
                             setForm((current) => ({
                               ...current,
@@ -1917,6 +1839,7 @@ export default function Home() {
             <span className="modal-kicker">{t.reviewKicker}</span>
             <h2 id="review-title">{t.reviewTitle}</h2>
             <p className="modal-copy">{fileInfo?.format.verification === "structural" ? t.reviewCopyStructural : t.reviewCopy}</p>
+            {(cleanupPreset !== "none" || groupDeletes.length > 0) && <p className="modal-copy">{t.cleanupThenWrite}</p>}
             <div className="diff-list">
               {diffs.map((diff) => (
                 <div className={`diff-row ${diff.kind === "danger" ? "danger-diff" : ""}`} key={diff.label}>

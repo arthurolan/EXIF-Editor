@@ -16,6 +16,7 @@ type ReadRequest = {
   type: "read";
   file: File;
   wasmUrl: string;
+  numeric?: boolean;
 };
 
 type WorkerRequest = ReadRequest | WriteRequest;
@@ -41,7 +42,7 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerRequest
     try {
       if (event.data.type === "read") {
         const result = await parseMetadata<Record<string, unknown>[]>(event.data.file, {
-          args: ["-json", "-G1", "-a", "-s"],
+          args: ["-json", "-G1", "-a", "-s", ...(event.data.numeric ? ["-n"] : [])],
           fetch: () => fetchVerifiedExifToolWasm(event.data.wasmUrl),
           transform: (data) => JSON.parse(data) as Record<string, unknown>[],
         });

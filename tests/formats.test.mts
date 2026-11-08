@@ -135,3 +135,9 @@ test("uses WebP bitstream chunks while excluding metadata and VP8X flags", () =>
   );
   assert.deepEqual([...imageDataPayload(webp, "webp")], [86, 80, 56, 32, 2, 0, 0, 0, 1, 2]);
 });
+test("rejects files whose contents do not match the claimed image format", () => {
+  const buffer = new TextEncoder().encode("This is not a photograph").buffer;
+  for (const format of ["jpeg", "png", "webp"] as const) {
+    assert.equal(formatSafetyFromBuffer(buffer, format).writable, false);
+  }
+});

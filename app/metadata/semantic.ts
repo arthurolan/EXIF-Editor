@@ -134,13 +134,29 @@ export const semanticWriteTags = (
       "IPTC:TimeCreated": time,
     };
   }
-  const nextValue = definition.list
-    ? value
-        .split(",")
-        .map((keyword) => keyword.trim())
-        .filter(Boolean)
-    : value;
+  const keywords = definition.list ? splitKeywords(value) : [];
+  // The WASM wrapper emits no arguments for an empty array. An explicit empty
+  // string is required to actually remove an existing keyword list.
+  const nextValue = definition.list ? (keywords.length ? keywords : "") : value;
   return Object.fromEntries(definition.tags.map((tag) => [tag, nextValue]));
+};
+
+const splitKeywords = (value: string): string[] =>
+  value.split(",").map((keyword) => keyword.trim()).filter(Boolean);
+
+export const semanticValueMatches = (
+  fields: MetadataField[],
+  key: SemanticFieldKey,
+  expected: string,
+): boolean => {
+  const definition = SEMANTIC_FIELDS.find((field) => field.key === key);
+  if (!definition) return false;
+  const values = definition.tags.map((tag) => valueForTag(fields, tag)).filter(Boolean);
+  if (!values.length) return expected.trim() === "" || (key === "keywords" && !splitKeywords(expected).length);
+  return values.every((actual) => key === "keywords"
+    ? JSON.stringify(splitKeywords(actual)) === JSON.stringify(splitKeywords(expected))
+    : key === "dateTime" ? comparableTimestamp(actual) === comparableTimestamp(expected)
+    : actual === expected.trim());
 };
 
 export const semanticConflicts = (

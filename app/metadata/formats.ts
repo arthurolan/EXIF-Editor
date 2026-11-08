@@ -115,6 +115,11 @@ const heifMdatData = (bytes: Uint8Array): Uint8Array | null => {
 
 export const formatSafetyFromBuffer = (buffer: ArrayBuffer, format: SupportedImageFormat): FormatSafety => {
   const bytes = new Uint8Array(buffer);
+  const matchesSignature = format === "jpeg" ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    : format === "png" ? [137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)
+    : format === "webp" ? bytes.length >= 12 && String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" && String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP"
+    : true;
+  if (!matchesSignature) return { writable: false, reason: "文件内容与图片格式不符，或文件已损坏。请检查文件，而不是仅修改扩展名。" };
   if (format === "tiff") { const layout = tiffLayout(bytes); if (!layout) return { writable: false, reason: "仅支持包含标准 Strip/Tile 图像数据的经典单页 TIFF；BigTIFF、损坏文件和未识别 TIFF 将保持只读。" }; if (layout.nextIfd) return { writable: false, reason: "多页 TIFF 暂不支持写入，以避免改变其他页面。" }; return { writable: true }; }
   if (format === "heic" && !heifMdatData(bytes)) return { writable: false, reason: "文件不是可验证的 HEIC / HEIF 容器，或不含可识别的图像数据。" };
   return { writable: true };

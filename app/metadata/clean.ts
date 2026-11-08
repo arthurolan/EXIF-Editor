@@ -1,5 +1,11 @@
 import type { CleanupPreset, MetadataField } from "./schema";
 
+/** PNG may store Photoshop IRB inside its IPTC profile. Both directories must
+ * be selected or ExifTool leaves that profile untouched. Photoshop group
+ * removal includes its contained IPTC, as it already does for JPEG. */
+export const expandCleanupTargets = (targets: readonly string[], format: string): string[] =>
+  [...new Set([...targets, ...(format === "png" && targets.includes("Photoshop:All") ? ["IPTC:All"] : [])])];
+
 /**
  * GPS can be stored in the EXIF GPS IFD, or mirrored into XMP. Composite GPS
  * fields are deliberately excluded because ExifTool derives them from source

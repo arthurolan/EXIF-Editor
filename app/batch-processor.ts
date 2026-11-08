@@ -1,8 +1,9 @@
 import { outputNameFor } from "./export-delivery.mjs";
-import { gpsDeletionTags, isGpsLocationMetadataField, privacySerialDeletionTagsForPreset, remainingDeletionTargets, remainingPrivacySerialFields } from "./metadata/clean";
+import { parseCoordinateInput } from "./coordinate-input";
+import { expandCleanupTargets, gpsDeletionTags, isGpsLocationMetadataField, privacySerialDeletionTagsForPreset, remainingDeletionTargets, remainingPrivacySerialFields } from "./metadata/clean";
 import { fileForMetadataWrite, formatSafetyFromBuffer, imageDataDigest, imageFormatFromFile, type SupportedImageFormat } from "./metadata/formats";
 import { CLEANUP_PRESETS, normalizeExifToolFields, type MetadataField } from "./metadata/schema";
-import { semanticValueFromFields, semanticWriteTags, type SemanticFieldKey } from "./metadata/semantic";
+import { semanticValueFromFields, semanticValueMatches, semanticWriteTags, type SemanticFieldKey } from "./metadata/semantic";
 
 export type BatchOperation = "privacy" | "removeGps" | "metadata" | "shiftTime" | "writeGps";
 export type BatchPhase = "reading" | "writing" | "verifying";
@@ -83,7 +84,7 @@ export const batchTextWriteTags = (edits: BatchTextEdits): Record<string, string
 
 export const batchTextEditsAreVerified = (fields: MetadataField[], edits: BatchTextEdits): boolean =>
   (Object.entries(edits) as Array<[BatchTextField, string | undefined]>).every(
-    ([key, value]) => !value?.trim() || semanticValueFromFields(fields, key) === value.trim(),
+    ([key, value]) => !value?.trim() || semanticValueMatches(fields, key, value),
   );
 
 const padDatePart = (value: number): string => String(value).padStart(2, "0");
@@ -96,18 +97,23 @@ export const offsetExifDateTime = (value: string, offset: BatchTimeOffset): stri
   const year = Number(yearText); const month = Number(monthText); const day = Number(dayText);
   const hour = Number(hourText); const minute = Number(minuteText); const second = Number(secondText);
   if (![year, month, day, hour, minute, second, offset.days, offset.hours, offset.minutes].every(Number.isFinite)) return null;
-  const source = new Date(year, month - 1, day, hour, minute, second);
-  if (source.getFullYear() !== year || source.getMonth() !== month - 1 || source.getDate() !== day || source.getHours() !== hour || source.getMinutes() !== minute || source.getSeconds() !== second) return null;
+  if (![offset.days, offset.hours, offset.minutes].every(Number.isSafeInteger) || year < 100 || year > 9999) return null;
+  // A photo's wall-clock timestamp is not in the computer's time zone. UTC
+  // arithmetic here avoids DST jumps without converting the photo's time.
+  const source = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (source.getUTCFullYear() !== year || source.getUTCMonth() !== month - 1 || source.getUTCDate() !== day || source.getUTCHours() !== hour || source.getUTCMinutes() !== minute || source.getUTCSeconds() !== second) return null;
   const shifted = new Date(source.getTime() + (offset.days * 1440 + offset.hours * 60 + offset.minutes) * 60_000);
-  if (Number.isNaN(shifted.getTime())) return null;
-  return `${shifted.getFullYear()}:${padDatePart(shifted.getMonth() + 1)}:${padDatePart(shifted.getDate())} ${padDatePart(shifted.getHours())}:${padDatePart(shifted.getMinutes())}:${padDatePart(shifted.getSeconds())}`;
+  if (Number.isNaN(shifted.getTime()) || shifted.getUTCFullYear() < 100 || shifted.getUTCFullYear() > 9999) return null;
+  return `${String(shifted.getUTCFullYear()).padStart(4, "0")}:${padDatePart(shifted.getUTCMonth() + 1)}:${padDatePart(shifted.getUTCDate())} ${padDatePart(shifted.getUTCHours())}:${padDatePart(shifted.getUTCMinutes())}:${padDatePart(shifted.getUTCSeconds())}`;
 };
 
 export const parseBatchGpsEdits = (input: BatchGpsInput): BatchGpsEdits | null => {
-  const latitude = Number(input.latitude); const longitude = Number(input.longitude);
+  if (!input.latitude.trim() || !input.longitude.trim()) return null;
+  const latitude = parseCoordinateInput(input.latitude, "latitude");
+  const longitude = parseCoordinateInput(input.longitude, "longitude");
   const altitude = input.altitude.trim() ? Number(input.altitude) : undefined;
   const direction = input.direction.trim() ? Number(input.direction) : undefined;
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  if (latitude === null || longitude === null) return null;
   if ((altitude !== undefined && !Number.isFinite(altitude)) || (direction !== undefined && (!Number.isFinite(direction) || direction < 0 || direction >= 360))) return null;
   return { latitude, longitude, ...(altitude === undefined ? {} : { altitude }), ...(direction === undefined ? {} : { direction }) };
 };
@@ -117,11 +123,13 @@ export const batchGpsWriteTags = (gps: BatchGpsEdits): Record<string, string | n
   GPSLatitudeRef: gps.latitude < 0 ? "S" : "N",
   GPSLongitude: Math.abs(gps.longitude),
   GPSLongitudeRef: gps.longitude < 0 ? "W" : "E",
-  ...(gps.altitude === undefined ? {} : { GPSAltitude: Math.abs(gps.altitude), GPSAltitudeRef: gps.altitude < 0 ? 1 : 0 }),
+  // The # suffix bypasses ExifTool's text-to-value conversion for this enum.
+  ...(gps.altitude === undefined ? {} : { GPSAltitude: Math.abs(gps.altitude), "GPSAltitudeRef#": gps.altitude < 0 ? 1 : 0 }),
   ...(gps.direction === undefined ? {} : { GPSImgDirection: gps.direction, GPSImgDirectionRef: "T" }),
 });
 
 const decimalGpsValue = (value: string): number | null => {
+  if (value.trim() && Number.isFinite(Number(value))) return Number(value);
   const parts = value.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
   if (!parts.length || parts.some((part) => !Number.isFinite(part))) return null;
   if (parts.length === 1) return parts[0];
@@ -184,7 +192,7 @@ export const processBatchFile = async (
     if (operation === "shiftTime" && !shiftedDateTime) {
       return { success: false, reason: "The original capture time could not be read or shifted; this copy was not delivered." };
     }
-    const deletionTargets = batchDeletionTags(fields, operation);
+    const deletionTargets = expandCleanupTargets(batchDeletionTags(fields, operation), format.format);
     const tags: Record<string, string | number | string[]> = {
       ...Object.fromEntries(deletionTargets.map((tag) => [tag, ""])),
       ...(operation === "metadata" ? batchTextWriteTags(effectiveTextEdits) : {}),
@@ -209,12 +217,14 @@ export const processBatchFile = async (
 
     const output = new File([result.data], outputNameFor(file.name, format.extension), { type: format.mimeType });
     onPhase("verifying");
-    const verified = await readMetadataInWorker(output);
+    const verified = await readMetadataInWorker(output, undefined, { numeric: true });
     if (!verified.success) return { success: false, reason: "The exported file could not be verified." };
     const outputFields = verificationFields(normalizeExifToolFields(verified.data), format.format);
     const removesGps = operation === "privacy" || operation === "removeGps";
     if (removesGps && outputFields.some(isGpsLocationMetadataField)) return { success: false, reason: "GPS verification failed; this copy was not delivered." };
-    if (remainingDeletionTargets(outputFields, deletionTargets).length) {
+    // GPS structural markers may remain after all actual location data is gone.
+    const deletionFields = outputFields.filter((field) => !["GPSVersionID", "GPSInfo"].includes(field.tag));
+    if (remainingDeletionTargets(deletionFields, deletionTargets).length) {
       return { success: false, reason: "Privacy-cleanup verification failed; this copy was not delivered." };
     }
     if (operation === "privacy" && remainingPrivacySerialFields(outputFields).length) {

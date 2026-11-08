@@ -25,14 +25,18 @@ const dosDateTime = (timestamp: number): [number, number] => {
 };
 
 const uniqueEntryNames = (sources: ZipSource[]): string[] => {
-  const seen = new Map<string, number>();
+  const seen = new Set<string>();
   return sources.map(({ name }, index) => {
     const safe = name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_") || `photo-${index + 1}`;
-    const count = seen.get(safe) ?? 0;
-    seen.set(safe, count + 1);
-    if (!count) return safe;
     const extension = safe.lastIndexOf(".");
-    return extension > 0 ? `${safe.slice(0, extension)} (${count})${safe.slice(extension)}` : `${safe} (${count})`;
+    let candidate = safe;
+    let count = 0;
+    while (seen.has(candidate.toLocaleLowerCase())) {
+      count += 1;
+      candidate = extension > 0 ? `${safe.slice(0, extension)} (${count})${safe.slice(extension)}` : `${safe} (${count})`;
+    }
+    seen.add(candidate.toLocaleLowerCase());
+    return candidate;
   });
 };
 
@@ -52,6 +56,7 @@ export const createStoredZip = async (
     const { file } = sources[index];
     if (file.size > 0xffffffff || offset + file.size > 0xffffffff) throw new Error("Batch is too large for a standard ZIP archive.");
     const name = encoder.encode(names[index]);
+    if (name.length > 65535) throw new Error("A filename is too long for a standard ZIP archive.");
     const data = new Uint8Array(await file.arrayBuffer());
     const checksum = crc32(data);
     const [time, date] = dosDateTime(file instanceof File ? file.lastModified : Date.now());
@@ -74,6 +79,7 @@ export const createStoredZip = async (
   }
 
   const centralSize = centralParts.reduce((total, part) => total + part.length, 0);
+  if (offset + centralSize + 22 > 0xffffffff) throw new Error("Batch is too large for a standard ZIP archive.");
   const end = new Uint8Array(22);
   const endView = new DataView(end.buffer);
   write32(endView, 0, 0x06054b50); write16(endView, 4, 0); write16(endView, 6, 0); write16(endView, 8, sources.length); write16(endView, 10, sources.length);

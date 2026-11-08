@@ -1,5 +1,5 @@
 import { resolveExifToolWasmUrl } from "./exif-write-runtime.mjs";
-import { ExifToolJsonRecord } from "./metadata/schema";
+import type { ExifToolJsonRecord } from "./metadata/schema";
 
 export type ExifWritePhase = "loading" | "writing";
 export type ExifTagValue = string | number | boolean | (string | number | boolean)[];
@@ -28,48 +28,48 @@ const createExifToolWorker = () =>
     name: "exif-metadata-worker",
   });
 
+type WorkerResult = ExifToolReadResult | ExifWriteResult;
+
+function runWorker(
+  request: { type: "read"; file: File; numeric: boolean } | { type: "write"; file: File; tags: Record<string, ExifTagValue>; args: string[] },
+  onPhase?: (phase: ExifWritePhase) => void,
+): Promise<WorkerResult> {
+  return new Promise((resolve) => {
+    let worker: Worker | undefined;
+    let timeout: number | undefined;
+    let settled = false;
+    const finish = (result: WorkerResult) => {
+      if (settled) return;
+      settled = true;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      worker?.terminate();
+      resolve(result);
+    };
+    try {
+      worker = createExifToolWorker();
+      timeout = window.setTimeout(() => finish({ success: false, error: "EXIF_WRITE_TIMEOUT" }), EXIF_WRITE_TIMEOUT_MS);
+      worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
+        if (event.data.type === "phase") {
+          onPhase?.(event.data.phase);
+        } else if (!event.data.success || event.data.type === (request.type === "read" ? "metadata" : "result")) {
+          finish(event.data);
+        }
+      });
+      worker.addEventListener("error", (event) => finish({ success: false, error: event.message || "ExifTool worker failed" }));
+      worker.addEventListener("messageerror", () => finish({ success: false, error: "ExifTool worker response could not be read" }));
+      worker.postMessage({ ...request, wasmUrl: resolveExifToolWasmUrl(document.baseURI) });
+    } catch (cause) {
+      finish({ success: false, error: cause instanceof Error ? cause.message : "ExifTool worker could not start" });
+    }
+  });
+}
+
 export function readMetadataInWorker(
   file: File,
   onPhase?: (phase: ExifWritePhase) => void,
+  options: { numeric?: boolean } = {},
 ): Promise<ExifToolReadResult> {
-  return new Promise((resolve) => {
-    const worker = createExifToolWorker();
-    let settled = false;
-
-    const finish = (result: ExifToolReadResult) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      worker.terminate();
-      resolve(result);
-    };
-
-    const timeout = window.setTimeout(() => {
-      finish({ success: false, error: "EXIF_WRITE_TIMEOUT" });
-    }, EXIF_WRITE_TIMEOUT_MS);
-
-    worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
-      if (event.data.type === "phase") {
-        onPhase?.(event.data.phase);
-        return;
-      }
-      if (event.data.type === "metadata") {
-        finish(event.data);
-        return;
-      }
-      if (!event.data.success) finish(event.data);
-    });
-
-    worker.addEventListener("error", (event) => {
-      finish({ success: false, error: event.message || "ExifTool worker failed" });
-    });
-
-    worker.postMessage({
-      type: "read",
-      file,
-      wasmUrl: resolveExifToolWasmUrl(document.baseURI),
-    });
-  });
+  return runWorker({ type: "read", file, numeric: options.numeric ?? false }, onPhase) as Promise<ExifToolReadResult>;
 }
 
 export function writeMetadataInWorker(
@@ -78,40 +78,5 @@ export function writeMetadataInWorker(
   args: string[] = [],
   onPhase?: (phase: ExifWritePhase) => void,
 ): Promise<ExifWriteResult> {
-  return new Promise((resolve) => {
-    const worker = createExifToolWorker();
-    let settled = false;
-
-    const finish = (result: ExifWriteResult) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      worker.terminate();
-      resolve(result);
-    };
-
-    const timeout = window.setTimeout(() => {
-      finish({ success: false, error: "EXIF_WRITE_TIMEOUT" });
-    }, EXIF_WRITE_TIMEOUT_MS);
-
-    worker.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
-      if (event.data.type === "phase") {
-        onPhase?.(event.data.phase);
-        return;
-      }
-      if (event.data.type === "result") finish(event.data);
-    });
-
-    worker.addEventListener("error", (event) => {
-      finish({ success: false, error: event.message || "ExifTool worker failed" });
-    });
-
-    worker.postMessage({
-      type: "write",
-      file,
-      tags,
-      args,
-      wasmUrl: resolveExifToolWasmUrl(document.baseURI),
-    });
-  });
+  return runWorker({ type: "write", file, tags, args }, onPhase) as Promise<ExifWriteResult>;
 }
